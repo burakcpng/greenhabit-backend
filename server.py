@@ -1,31 +1,11 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
-from dotenv import load_dotenv
 from datetime import datetime, date
 from typing import List, Optional
-from pathlib import Path
 import os
 import uuid
-
-# ==================================================
-# ENV
-# ==================================================
-
-BASE_DIR = Path(__file__).parent
-load_dotenv(BASE_DIR / ".env")
-load_dotenv(BASE_DIR / "env")
-
-MONGO_URL = os.getenv("MONGO_URL")
-if not MONGO_URL:
-    raise RuntimeError("MONGO_URL environment variable is missing")
-
-DB_NAME = os.getenv("DB_NAME", "GreenHabit_db")
-
-# ==================================================
-# APP
-# ==================================================
+from pymongo import MongoClient
 
 app = FastAPI(title="GreenHabit Backend")
 api = APIRouter(prefix="/api")
@@ -37,12 +17,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-client = AsyncIOMotorClient(MONGO_URL)
-db = client[DB_NAME]
+def get_db():
+    mongo_url = os.getenv("MONGO_URL")
+    db_name = os.getenv("DB_NAME", "GreenHabit_db")
 
-# ==================================================
-# MODELS
-# ==================================================
+    if not mongo_url:
+        raise HTTPException(status_code=500, detail="MONGO_URL environment variable is missing")
+
+    client = MongoClient(
+        mongo_url,
+        serverSelectionTimeoutMS=3000,
+        connectTimeoutMS=3000
+    )
+
+    return client[db_name]
+
+def sanitize_doc(doc):
+    if doc and "_id" in doc:
+        doc["_id"] = str(doc["_id"])
+    return doc
+
+def sanitize_docs(docs):
+    return [sanitize_doc(doc) for doc in docs]
 
 class Task(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -56,7 +52,6 @@ class Task(BaseModel):
     isCompleted: bool = False
     createdAt: datetime = Field(default_factory=datetime.utcnow)
 
-
 class CreateTaskPayload(BaseModel):
     title: str
     details: str
@@ -65,13 +60,11 @@ class CreateTaskPayload(BaseModel):
     estimatedImpact: str
     date: Optional[str] = None
 
-
 class LearningContent(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     title: str
     details: str
     category: str
-
 
 class UserPreferences(BaseModel):
     userId: str = "demo-user"
@@ -79,113 +72,114 @@ class UserPreferences(BaseModel):
     interests: List[str]
     language: str
 
-
-# ==================================================
-# HEALTH
-# ==================================================
+@app.get("/")
+async def root():
+    return {"status": "GreenHabit backend running"}
 
 @app.get("/healthz")
 async def health_check():
     return {"ok": True}
 
-
-# ==================================================
-# TASKS
-# ==================================================
-
 @api.get("/tasks")
 async def get_tasks(date: str = Query(...)):
-    tasks = await db.tasks.find({"date": date}).to_list(100)
-    return tasks
-
+    try:
+        db = get_db()
+        tasks = list(db.tasks.find({"date": date}).limit(100))
+        return sanitize_docs(tasks)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 @api.post("/tasks")
 async def create_task(payload: CreateTaskPayload):
-    task_date = payload.date or date.today().isoformat()
-
-    task = Task(
-        title=payload.title,
-        details=payload.details,
-        category=payload.category,
-        date=task_date,
-        points=payload.points,
-        estimatedImpact=payload.estimatedImpact,
-    )
-
-    await db.tasks.insert_one(task.dict())
-    return {"success": True}
-
+    try:
+        task_date = payload.date or date.today().isoformat()
+        
+        task = Task(
+            title=payload.title,
+            details=payload.details,
+            category=payload.category,
+            date=task_date,
+            points=payload.points,
+            estimatedImpact=payload.estimatedImpact,
+        )
+        
+        db = get_db()
+        db.tasks.insert_one(task.dict())
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 @api.patch("/tasks/{task_id}")
 async def update_task(task_id: str, isCompleted: bool):
-    result = await db.tasks.update_one(
-        {"id": task_id},
-        {"$set": {"isCompleted": isCompleted}},
-    )
-
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    return {"success": True}
-
-
-# ==================================================
-# LEARNING
-# ==================================================
+    try:
+        db = get_db()
+        result = db.tasks.update_one(
+            {"id": task_id},
+            {"$set": {"isCompleted": isCompleted}},
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 @api.get("/learning")
 async def get_learning():
-    count = await db.learning.count_documents({})
-    if count == 0:
-        seed = [
-            LearningContent(
-                title="Save Water",
-                details="Take shorter showers and fix leaks.",
-                category="Water",
-            ),
-            LearningContent(
-                title="Reduce Energy Use",
-                details="Turn off lights when leaving rooms.",
-                category="Energy",
-            ),
-        ]
-        await db.learning.insert_many([item.dict() for item in seed])
-
-    items = await db.learning.find().to_list(100)
-    return items
-
-
-# ==================================================
-# PREFERENCES
-# ==================================================
+    try:
+        db = get_db()
+        count = db.learning.count_documents({})
+        if count == 0:
+            seed = [
+                LearningContent(
+                    title="Save Water",
+                    details="Take shorter showers and fix leaks.",
+                    category="Water",
+                ),
+                LearningContent(
+                    title="Reduce Energy Use",
+                    details="Turn off lights when leaving rooms.",
+                    category="Energy",
+                ),
+            ]
+            db.learning.insert_many([item.dict() for item in seed])
+        
+        items = list(db.learning.find().limit(100))
+        return sanitize_docs(items)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 @api.get("/preferences")
 async def get_preferences():
-    prefs = await db.preferences.find_one({"userId": "demo-user"})
-    if not prefs:
-        prefs = UserPreferences(
-            country="TR",
-            interests=["energy", "water"],
-            language="en",
-        ).dict()
-        await db.preferences.insert_one(prefs)
-
-    return prefs
-
+    try:
+        db = get_db()
+        prefs = db.preferences.find_one({"userId": "demo-user"})
+        if not prefs:
+            prefs = UserPreferences(
+                country="TR",
+                interests=["energy", "water"],
+                language="en",
+            ).dict()
+            db.preferences.insert_one(prefs)
+            prefs = db.preferences.find_one({"userId": "demo-user"})
+        
+        return sanitize_doc(prefs)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 @api.put("/preferences")
 async def update_preferences(prefs: UserPreferences):
-    await db.preferences.update_one(
-        {"userId": prefs.userId},
-        {"$set": prefs.dict()},
-        upsert=True,
-    )
-    return {"success": True}
-
-
-# ==================================================
-# STATS
-# ==================================================
+    try:
+        db = get_db()
+        db.preferences.update_one(
+            {"userId": prefs.userId},
+            {"$set": prefs.dict()},
+            upsert=True,
+        )
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 @api.get("/stats/weekly")
 async def weekly_stats():
@@ -200,7 +194,6 @@ async def weekly_stats():
         "co2Saved": 1.2,
     }
 
-
 @api.get("/stats/monthly")
 async def monthly_stats():
     return {
@@ -212,11 +205,6 @@ async def monthly_stats():
         "totalPoints": 120,
         "co2Saved": 3.5,
     }
-
-
-# ==================================================
-# AI (MOCK – STABLE)
-# ==================================================
 
 @api.post("/ai/generate-tasks")
 async def generate_ai_tasks():
@@ -242,10 +230,4 @@ async def generate_ai_tasks():
         ]
     }
 
-
-# ==================================================
-# REGISTER ROUTER
-# ==================================================
-
 app.include_router(api)
-
