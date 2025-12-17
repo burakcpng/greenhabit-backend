@@ -6,6 +6,7 @@ from typing import List, Optional
 import os
 import uuid
 from pymongo import MongoClient
+import certifi
 
 app = FastAPI(title="GreenHabit Backend")
 api = APIRouter(prefix="/api")
@@ -26,10 +27,9 @@ def get_db():
 
     client = MongoClient(
         mongo_url,
-        serverSelectionTimeoutMS=5000,
-        connectTimeoutMS=5000,
-        tls=True,  # ← EKLE
-        tlsAllowInvalidCertificates=True  # ← EKLE
+        serverSelectionTimeoutMS=10000,
+        connectTimeoutMS=10000,
+        tlsCAFile=certifi.where() 
     )
 
     return client[db_name]
