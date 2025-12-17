@@ -26,8 +26,10 @@ def get_db():
 
     client = MongoClient(
         mongo_url,
-        serverSelectionTimeoutMS=3000,
-        connectTimeoutMS=3000
+        serverSelectionTimeoutMS=5000,
+        connectTimeoutMS=5000,
+        tls=True,  # ← EKLE
+        tlsAllowInvalidCertificates=True  # ← EKLE
     )
 
     return client[db_name]
