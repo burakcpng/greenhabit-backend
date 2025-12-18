@@ -132,6 +132,12 @@ def serialize_learning(content: dict) -> dict:
     return content
 
 # ======================== TASKS ROUTES ========================
+from fastapi import FastAPI
+
+@app.get("/healthz")
+async def healthz():
+    return {"status": "ok"}
+
 
 @api_router.get("/tasks")
 async def get_tasks(date: Optional[str] = Query(None)):
