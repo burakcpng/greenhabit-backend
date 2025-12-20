@@ -44,7 +44,7 @@ def get_db():
         client.admin.command('ping')
         return client[db_name]
     except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Database connection failed: {str(e)}")
+        raise HTTPException(status_code=503, detail=f"Database unavailable: {str(e)}")
 
 # --- Helper Functions ---
 def sanitize_doc(doc):
@@ -57,8 +57,9 @@ def sanitize_docs(docs):
     return [sanitize_doc(doc) for doc in docs]
 
 def get_current_user(x_user_id: Optional[str] = Header(None)):
-    """Validates User ID from header or assigns default."""
+    """Validates the user ID from the header or assigns a default."""
     if not x_user_id:
+        # Fallback for development, though Header should be mandatory in production
         return "demo-user"
     return x_user_id
 
@@ -144,12 +145,13 @@ async def update_task(
     
     update_data = {k: v for k, v in payload.dict(exclude_unset=True).items() if v is not None}
     if not update_data:
-        raise HTTPException(status_code=400, detail="No fields to update")
+        raise HTTPException(status_code=400, detail="No fields provided for update")
     
     update_data["updatedAt"] = datetime.utcnow()
     if update_data.get("isCompleted"):
         update_data["completedAt"] = datetime.utcnow()
     
+    # CRITICAL: Both task_id and user_id are checked here
     result = db.tasks.update_one(
         {"id": task_id, "userId": user_id},
         {"$set": update_data}
@@ -243,4 +245,5 @@ async def update_preferences(
     )
     return {"success": True}
 
+# AI and Learning endpoints can be extended similarly to use x_user_id.
 app.include_router(api)
