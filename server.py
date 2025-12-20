@@ -9,7 +9,7 @@ from pymongo import MongoClient, DESCENDING
 
 app = FastAPI(
     title="GreenHabit API",
-    description="Sürdürülebilir alışkanlık takip platformu",
+    description="Sustainable habit tracking platform",
     version="2.1.0",
     docs_url="/docs",
     redoc_url="/redoc"
@@ -25,13 +25,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Veritabanı Bağlantısı ---
+# --- Database Connection ---
 def get_db():
     mongo_url = os.getenv("MONGO_URL")
     db_name = os.getenv("DB_NAME", "GreenHabit_db")
     
     if not mongo_url:
-        raise HTTPException(status_code=500, detail="Veritabanı yapılandırması eksik")
+        raise HTTPException(status_code=500, detail="Database configuration missing")
     
     try:
         client = MongoClient(
@@ -44,9 +44,9 @@ def get_db():
         client.admin.command('ping')
         return client[db_name]
     except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Veritabanına ulaşılamıyor: {str(e)}")
+        raise HTTPException(status_code=503, detail=f"Database connection failed: {str(e)}")
 
-# --- Yardımcı Fonksiyonlar ---
+# --- Helper Functions ---
 def sanitize_doc(doc):
     if doc and "_id" in doc:
         doc["id"] = str(doc["_id"])
@@ -57,13 +57,12 @@ def sanitize_docs(docs):
     return [sanitize_doc(doc) for doc in docs]
 
 def get_current_user(x_user_id: Optional[str] = Header(None)):
-    """Header'dan gelen kullanıcı ID'sini doğrular veya varsayılan atar."""
+    """Validates User ID from header or assigns default."""
     if not x_user_id:
-        # Geliştirme sürecinde kolaylık için fallback, ancak canlıda Header zorunlu olmalı
         return "demo-user"
     return x_user_id
 
-# --- Modeller ---
+# --- Models ---
 class Task(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     userId: str
@@ -93,7 +92,7 @@ class UpdateTaskPayload(BaseModel):
     category: Optional[str] = None
     points: Optional[int] = None
 
-# --- Ana Endpoint'ler ---
+# --- Main Endpoints ---
 @app.get("/")
 async def root():
     return {"service": "GreenHabit API", "status": "running"}
@@ -132,7 +131,7 @@ async def create_task(payload: CreateTaskPayload, x_user_id: Optional[str] = Hea
     db = get_db()
     db.tasks.insert_one(task.dict())
     
-    return {"success": True, "taskId": task.id, "message": "Görev oluşturuldu"}
+    return {"success": True, "taskId": task.id, "message": "Task created successfully"}
 
 @api.patch("/tasks/{task_id}")
 async def update_task(
@@ -145,20 +144,19 @@ async def update_task(
     
     update_data = {k: v for k, v in payload.dict(exclude_unset=True).items() if v is not None}
     if not update_data:
-        raise HTTPException(status_code=400, detail="Güncellenecek alan bulunamadı")
+        raise HTTPException(status_code=400, detail="No fields to update")
     
     update_data["updatedAt"] = datetime.utcnow()
     if update_data.get("isCompleted"):
         update_data["completedAt"] = datetime.utcnow()
     
-    # KRİTİK: Burada hem task_id hem de user_id kontrol ediliyor
     result = db.tasks.update_one(
         {"id": task_id, "userId": user_id},
         {"$set": update_data}
     )
     
     if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Görev bulunamadı (veya yetki yok)")
+        raise HTTPException(status_code=404, detail="Task not found or unauthorized")
     
     return {"success": True, "modified": result.modified_count > 0}
 
@@ -169,7 +167,7 @@ async def delete_task(task_id: str, x_user_id: Optional[str] = Header(None)):
     result = db.tasks.delete_one({"id": task_id, "userId": user_id})
     
     if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Görev bulunamadı")
+        raise HTTPException(status_code=404, detail="Task not found")
     
     return {"success": True}
 
@@ -221,9 +219,9 @@ async def get_preferences(x_user_id: Optional[str] = Header(None)):
     if not prefs:
         prefs = {
             "userId": user_id,
-            "country": "TR",
+            "country": "US",
             "interests": ["energy", "water"],
-            "language": "tr"
+            "language": "en"
         }
         db.preferences.insert_one(prefs)
         prefs = db.preferences.find_one({"userId": user_id})
@@ -245,5 +243,4 @@ async def update_preferences(
     )
     return {"success": True}
 
-# AI ve Learning endpoint'leri de benzer şekilde x_user_id kullanacak şekilde genişletilebilir.
 app.include_router(api)
