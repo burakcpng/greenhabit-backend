@@ -245,5 +245,61 @@ async def update_preferences(
     )
     return {"success": True}
 
-# AI and Learning endpoints can be extended similarly to use x_user_id.
+# --- Learning API ---
+@api.get("/learning")
+async def get_learning(
+    category: Optional[str] = Query(None),
+    x_user_id: Optional[str] = Header(None)
+):
+    # Validating user just in case, though learning content might be public
+    get_current_user(x_user_id)
+    db = get_db()
+    
+    query = {}
+    if category:
+        query["category"] = category
+        
+    # Check if we have data, otherwise seed some default English content
+    if db.learning.count_documents({}) == 0:
+        seed_data = [
+            {"title": "Energy Saving 101", "content": "Switching to LED bulbs can save up to 80% energy.", "category": "Energy", "source": "EcoGuide"},
+            {"title": "Water Conservation", "content": "Fixing a leaky faucet saves hundreds of gallons a year.", "category": "Water", "source": "GreenLife"},
+            {"title": "Zero Waste Tips", "content": "Composting organic waste reduces methane emissions.", "category": "Waste", "source": "WasteFree"}
+        ]
+        db.learning.insert_many(seed_data)
+    
+    items = list(db.learning.find(query).limit(50))
+    return sanitize_docs(items)
+
+# --- AI API ---
+@api.post("/ai/generate-tasks")
+async def generate_ai_tasks(
+    category: Optional[str] = Query(None),
+    count: int = Query(3),
+    x_user_id: Optional[str] = Header(None)
+):
+    # Verify user identity
+    get_current_user(x_user_id)
+    today = date.today().isoformat()
+    
+    # Mock AI logic returning English content
+    all_tasks = [
+        {"title": "Turn off unused lights", "details": "Reduce electricity usage at home.", "category": "Energy", "points": 10, "estimatedImpact": "Saves ~0.3kg CO2"},
+        {"title": "Use a reusable bottle", "details": "Avoid single-use plastic bottles.", "category": "Waste", "points": 15, "estimatedImpact": "Reduces plastic waste"},
+        {"title": "Take shorter showers", "details": "Limit shower time to 5 minutes.", "category": "Water", "points": 20, "estimatedImpact": "Saves ~40L water"},
+        {"title": "Walk instead of driving", "details": "For distances under 2km, choose walking.", "category": "Transport", "points": 25, "estimatedImpact": "Saves ~0.5kg CO2"}
+    ]
+    
+    filtered = [t for t in all_tasks if category is None or t["category"] == category]
+    selected = (filtered[:count]) if len(filtered) >= count else filtered
+    
+    # Add common fields
+    for t in selected:
+        t["date"] = today
+        
+    return {
+        "tasks": selected,
+        "count": len(selected)
+    }
+
 app.include_router(api)
