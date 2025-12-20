@@ -96,10 +96,7 @@ async def root():
 
 @app.get("/healthz")
 async def health_check():
-    return {
-        "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat()
-    }
+    return {"ok": True}
 
 @api.get("/tasks")
 async def get_tasks(
