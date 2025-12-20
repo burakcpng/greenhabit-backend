@@ -4,8 +4,8 @@ from pydantic import BaseModel, Field
 from datetime import datetime, date, timedelta
 from typing import List, Optional
 import os
-import uuid
 from pymongo import MongoClient, DESCENDING
+from bson import ObjectId
 
 app = FastAPI(
     title="GreenHabit API",
@@ -46,6 +46,7 @@ def get_db():
         raise HTTPException(status_code=503, detail=f"Database unavailable: {str(e)}")
 
 def sanitize_doc(doc):
+    """Convert MongoDB _id to string id"""
     if doc and "_id" in doc:
         doc["id"] = str(doc["_id"])
         del doc["_id"]
@@ -56,20 +57,6 @@ def sanitize_docs(docs):
 
 def get_user_id(x_user_id: Optional[str] = Header(None)) -> str:
     return x_user_id or "demo-user"
-
-class Task(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    userId: str
-    title: str = Field(..., min_length=1, max_length=200)
-    details: str = Field(..., max_length=1000)
-    category: str = Field(..., description="Task category")
-    date: str = Field(..., description="ISO date string")
-    points: int = Field(..., ge=0, le=1000)
-    estimatedImpact: str = Field(..., max_length=200)
-    isCompleted: bool = False
-    completedAt: Optional[datetime] = None
-    createdAt: datetime = Field(default_factory=datetime.utcnow)
-    updatedAt: datetime = Field(default_factory=datetime.utcnow)
 
 class CreateTaskPayload(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
@@ -97,6 +84,7 @@ async def root():
 @app.get("/healthz")
 async def health_check():
     return {"ok": True}
+    }
 
 @api.get("/tasks")
 async def get_tasks(
@@ -134,22 +122,26 @@ async def create_task(
         task_date = payload.date or date.today().isoformat()
         user_id = get_user_id(x_user_id)
         
-        task = Task(
-            userId=user_id,
-            title=payload.title,
-            details=payload.details,
-            category=payload.category,
-            date=task_date,
-            points=payload.points,
-            estimatedImpact=payload.estimatedImpact,
-        )
+        task_dict = {
+            "userId": user_id,
+            "title": payload.title,
+            "details": payload.details,
+            "category": payload.category,
+            "date": task_date,
+            "points": payload.points,
+            "estimatedImpact": payload.estimatedImpact,
+            "isCompleted": False,
+            "completedAt": None,
+            "createdAt": datetime.utcnow(),
+            "updatedAt": datetime.utcnow()
+        }
         
         db = get_db()
-        db.tasks.insert_one(task.dict())
+        result = db.tasks.insert_one(task_dict)
         
         return {
             "success": True,
-            "taskId": task.id,
+            "taskId": str(result.inserted_id),
             "message": "Task created successfully"
         }
     except HTTPException:
@@ -167,6 +159,12 @@ async def update_task(
         db = get_db()
         user_id = get_user_id(x_user_id)
         
+        # Validate ObjectId
+        try:
+            object_id = ObjectId(task_id)
+        except:
+            raise HTTPException(status_code=400, detail="Invalid task ID format")
+        
         update_data = {k: v for k, v in payload.dict(exclude_unset=True).items() if v is not None}
         
         if not update_data:
@@ -178,7 +176,7 @@ async def update_task(
             update_data["completedAt"] = datetime.utcnow()
         
         result = db.tasks.update_one(
-            {"id": task_id, "userId": user_id},
+            {"_id": object_id, "userId": user_id},
             {"$set": update_data}
         )
         
@@ -203,7 +201,13 @@ async def delete_task(
     try:
         db = get_db()
         user_id = get_user_id(x_user_id)
-        result = db.tasks.delete_one({"id": task_id, "userId": user_id})
+        
+        try:
+            object_id = ObjectId(task_id)
+        except:
+            raise HTTPException(status_code=400, detail="Invalid task ID format")
+        
+        result = db.tasks.delete_one({"_id": object_id, "userId": user_id})
         
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Task not found")
@@ -384,13 +388,11 @@ async def get_learning(category: Optional[str] = Query(None)):
         if count == 0:
             seed_data = [
                 {
-                    "id": str(uuid.uuid4()),
                     "title": "Save Water: Daily Habits",
                     "details": "Learn practical ways to reduce water consumption.",
                     "category": "Water"
                 },
                 {
-                    "id": str(uuid.uuid4()),
                     "title": "Energy Efficiency at Home",
                     "details": "Reduce your carbon footprint with simple actions.",
                     "category": "Energy"
