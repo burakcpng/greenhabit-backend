@@ -84,7 +84,7 @@ async def root():
 @app.get("/healthz")
 async def health_check():
     return {"ok": True}
-    }
+
 
 @api.get("/tasks")
 async def get_tasks(
