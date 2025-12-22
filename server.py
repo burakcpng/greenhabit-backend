@@ -565,7 +565,10 @@ async def get_learning(category: Optional[str] = Query(None)):
 @api.post("/ai/generate-tasks")
 async def generate_ai_tasks():
     """Generate random eco-friendly tasks from different categories"""
-    today = date.today().isoformat()
+    # Use UTC+3 for Turkey timezone
+    from datetime import timezone, timedelta as td
+    turkey_tz = timezone(td(hours=3))
+    today = datetime.now(turkey_tz).date().isoformat()
     
     # Rastgele 3-4 kategori seç
     all_categories = ["Energy", "Water", "Waste", "Transport"]
