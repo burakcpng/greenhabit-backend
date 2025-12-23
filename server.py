@@ -654,7 +654,7 @@ async def update_preferences(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update preferences: {str(e)}")
 
-@api.get("api/learning")
+@api.get("/learning")
 async def get_learning(category: Optional[str] = Query(None)):
     try:
         db = get_db()
