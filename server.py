@@ -5,7 +5,7 @@ from datetime import datetime, date, timedelta
 from typing import List, Optional
 import os
 import random
-import uuid  # ✅ Eklendi: tasks.py'deki mantık için gerekli
+import uuid
 from pymongo import MongoClient, DESCENDING
 from bson import ObjectId
 
@@ -50,7 +50,6 @@ def get_db():
 def sanitize_doc(doc):
     """Convert MongoDB _id to string id"""
     if doc and "_id" in doc:
-        # If there's already an 'id' field (UUID), keep it
         if "id" not in doc:
             doc["id"] = str(doc["_id"])
         del doc["_id"]
@@ -61,6 +60,8 @@ def sanitize_docs(docs):
 
 def get_user_id(x_user_id: Optional[str] = Header(None)) -> str:
     return x_user_id or "demo-user"
+
+# ======================== MODELS ========================
 
 class CreateTaskPayload(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
@@ -77,7 +78,8 @@ class UpdateTaskPayload(BaseModel):
     category: Optional[str] = None
     points: Optional[int] = Field(None, ge=0, le=1000)
 
-# Task Templates for AI Generation - ENHANCED (from tasks.py)
+# ======================== TASK POOL ========================
+
 TASK_POOL = {
     "Energy": [
         {
@@ -329,6 +331,8 @@ TASK_POOL = {
     ]
 }
 
+# ======================== ROOT ENDPOINTS ========================
+
 @app.get("/")
 async def root():
     return {
@@ -340,6 +344,8 @@ async def root():
 @app.get("/healthz")
 async def health_check():
     return {"ok": True}
+
+# ======================== TASK ROUTES ========================
 
 @api.get("/tasks")
 async def get_tasks(
@@ -366,7 +372,72 @@ async def get_tasks(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch tasks: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch learning content: {str(e)}")
+
+# ======================== AI ROUTES ========================
+
+@api.post("/ai/generate-tasks")
+async def generate_ai_tasks(x_user_id: Optional[str] = Header(None)):
+    """Generate random eco-friendly tasks and save to database"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        
+        today = date.today().isoformat()
+        
+        # Check if tasks already exist for today
+        existing_tasks = list(db.tasks.find({
+            "userId": user_id,
+            "date": today
+        }))
+        
+        if len(existing_tasks) >= 3:
+            return {
+                "message": "Tasks already generated for today",
+                "tasks": sanitize_docs(existing_tasks),
+                "count": len(existing_tasks)
+            }
+        
+        # Generate 3-4 random tasks from different categories
+        all_categories = ["Energy", "Water", "Waste", "Transport"]
+        num_tasks = random.randint(3, 4)
+        selected_categories = random.sample(all_categories, k=num_tasks)
+        
+        generated_tasks = []
+        
+        for category in selected_categories:
+            task_template = random.choice(TASK_POOL[category])
+            
+            task_id = str(uuid.uuid4())
+            task_dict = {
+                "id": task_id,
+                "userId": user_id,
+                "title": task_template["title"],
+                "details": task_template["details"],
+                "category": category,
+                "date": today,
+                "points": task_template["points"],
+                "estimatedImpact": task_template["estimatedImpact"],
+                "isCompleted": False,
+                "completedAt": None,
+                "createdAt": datetime.utcnow(),
+                "updatedAt": datetime.utcnow()
+            }
+            
+            db.tasks.insert_one(task_dict)
+            generated_tasks.append(sanitize_doc(task_dict.copy()))
+        
+        return {
+            "message": "Tasks generated successfully",
+            "tasks": generated_tasks,
+            "count": len(generated_tasks)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate tasks: {str(e)}")
+
+app.include_router(api)"Failed to fetch tasks: {str(e)}")
 
 @api.post("/tasks", status_code=201)
 async def create_task(
@@ -377,11 +448,10 @@ async def create_task(
         task_date = payload.date or date.today().isoformat()
         user_id = get_user_id(x_user_id)
         
-        # Generate unique ID (from tasks.py logic)
         task_id = str(uuid.uuid4())
         
         task_dict = {
-            "id": task_id,  # ✅ Eklendi
+            "id": task_id,
             "userId": user_id,
             "title": payload.title,
             "details": payload.details,
@@ -400,7 +470,7 @@ async def create_task(
         
         return {
             "success": True,
-            "taskId": task_id,  # ✅ UUID döndür
+            "taskId": task_id,
             "message": "Task created successfully"
         }
     except HTTPException:
@@ -418,11 +488,10 @@ async def update_task(
         db = get_db()
         user_id = get_user_id(x_user_id)
         
-        # Try to find by custom 'id' field first (UUID), then by ObjectId (Enhanced logic)
+        # Try to find by custom 'id' field first (UUID), then by ObjectId
         task = db.tasks.find_one({"id": task_id, "userId": user_id})
         
         if not task:
-            # Try ObjectId format fallback
             try:
                 object_id = ObjectId(task_id)
                 task = db.tasks.find_one({"_id": object_id, "userId": user_id})
@@ -473,11 +542,10 @@ async def delete_task(
         db = get_db()
         user_id = get_user_id(x_user_id)
         
-        # Try to find by custom 'id' field first (UUID), then by ObjectId (Enhanced logic)
+        # Try to find by custom 'id' field first (UUID), then by ObjectId
         result = db.tasks.delete_one({"id": task_id, "userId": user_id})
         
         if result.deleted_count == 0:
-            # Try ObjectId format
             try:
                 object_id = ObjectId(task_id)
                 result = db.tasks.delete_one({"_id": object_id, "userId": user_id})
@@ -495,6 +563,8 @@ async def delete_task(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete task: {str(e)}")
+
+# ======================== STATS ROUTES ========================
 
 @api.get("/stats/weekly")
 async def weekly_stats(x_user_id: Optional[str] = Header(None)):
@@ -596,6 +666,8 @@ async def monthly_stats(x_user_id: Optional[str] = Header(None)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch stats: {str(e)}")
 
+# ======================== PREFERENCES ROUTES ========================
+
 @api.get("/preferences")
 async def get_preferences(x_user_id: Optional[str] = Header(None)):
     try:
@@ -606,8 +678,8 @@ async def get_preferences(x_user_id: Optional[str] = Header(None)):
         if not prefs:
             prefs = {
                 "userId": user_id,
-                "country": "TR",
-                "interests": ["energy", "water", "waste"],
+                "country": "EU",
+                "interests": ["Energy", "Water", "Waste", "Transport"],
                 "language": "en"
             }
             db.preferences.insert_one(prefs)
@@ -654,6 +726,8 @@ async def update_preferences(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update preferences: {str(e)}")
 
+# ======================== LEARNING ROUTES ========================
+
 @api.get("/learning")
 async def get_learning(category: Optional[str] = Query(None)):
     try:
@@ -663,7 +737,7 @@ async def get_learning(category: Optional[str] = Query(None)):
         if count == 0:
             seed_data = [
                 {
-                    "id": str(uuid.uuid4()), # ✅ UUID eklendi
+                    "id": str(uuid.uuid4()),
                     "title": "Water Conservation at Home",
                     "details": "Water is one of our most precious resources. Simple changes in daily habits can save thousands of liters per year. Fix leaky faucets - a single dripping faucet can waste up to 20 gallons per day. Take shorter showers - reducing your shower time by just 2 minutes can save up to 10 gallons of water. Turn off the tap while brushing teeth or shaving. Use a dishwasher instead of hand washing - modern dishwashers use less water. Collect rainwater for watering plants. Install low-flow showerheads and faucet aerators. Water your garden early morning or late evening to reduce evaporation. Choose drought-resistant plants for your garden. Use a broom instead of a hose to clean driveways.",
                     "category": "Water"
@@ -710,41 +784,4 @@ async def get_learning(category: Optional[str] = Query(None)):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch learning content: {str(e)}")
-
-@api.post("/ai/generate-tasks")
-async def generate_ai_tasks():
-    """Generate random eco-friendly tasks from different categories"""
-    # Use UTC+3 for Turkey timezone
-    from datetime import timezone, timedelta as td
-    turkey_tz = timezone(td(hours=3))
-    today = datetime.now(turkey_tz).date().isoformat()
-    
-    # Rastgele 3-4 kategori seç
-    all_categories = ["Energy", "Water", "Waste", "Transport"]
-    num_tasks = random.randint(3, 4)
-    selected_categories = random.sample(all_categories, k=num_tasks)
-    
-    generated_tasks = []
-    
-    for category in selected_categories:
-        # Her kategoriden rastgele bir task seç
-        task_template = random.choice(TASK_POOL[category])
-        
-        task = {
-            "title": task_template["title"],
-            "details": task_template["details"],
-            "category": category,
-            "date": today,
-            "points": task_template["points"],
-            "estimatedImpact": task_template["estimatedImpact"]
-        }
-        
-        generated_tasks.append(task)
-    
-    return {
-        "tasks": generated_tasks,
-        "count": len(generated_tasks)
-    }
-
-app.include_router(api)
+        raise HTTPException(status_code=500, detail=f
