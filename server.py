@@ -12,7 +12,7 @@ from bson import ObjectId
 app = FastAPI(
     title="GreenHabit API",
     description="Sustainable habits tracking platform",
-    version="2.1.0",
+    version="1.1.0",
     docs_url="/docs",
     redoc_url="/redoc"
 )
@@ -372,72 +372,7 @@ async def get_tasks(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch learning content: {str(e)}")
-
-# ======================== AI ROUTES ========================
-
-@api.post("/ai/generate-tasks")
-async def generate_ai_tasks(x_user_id: Optional[str] = Header(None)):
-    """Generate random eco-friendly tasks and save to database"""
-    try:
-        db = get_db()
-        user_id = get_user_id(x_user_id)
-        
-        today = date.today().isoformat()
-        
-        # Check if tasks already exist for today
-        existing_tasks = list(db.tasks.find({
-            "userId": user_id,
-            "date": today
-        }))
-        
-        if len(existing_tasks) >= 3:
-            return {
-                "message": "Tasks already generated for today",
-                "tasks": sanitize_docs(existing_tasks),
-                "count": len(existing_tasks)
-            }
-        
-        # Generate 3-4 random tasks from different categories
-        all_categories = ["Energy", "Water", "Waste", "Transport"]
-        num_tasks = random.randint(3, 4)
-        selected_categories = random.sample(all_categories, k=num_tasks)
-        
-        generated_tasks = []
-        
-        for category in selected_categories:
-            task_template = random.choice(TASK_POOL[category])
-            
-            task_id = str(uuid.uuid4())
-            task_dict = {
-                "id": task_id,
-                "userId": user_id,
-                "title": task_template["title"],
-                "details": task_template["details"],
-                "category": category,
-                "date": today,
-                "points": task_template["points"],
-                "estimatedImpact": task_template["estimatedImpact"],
-                "isCompleted": False,
-                "completedAt": None,
-                "createdAt": datetime.utcnow(),
-                "updatedAt": datetime.utcnow()
-            }
-            
-            db.tasks.insert_one(task_dict)
-            generated_tasks.append(sanitize_doc(task_dict.copy()))
-        
-        return {
-            "message": "Tasks generated successfully",
-            "tasks": generated_tasks,
-            "count": len(generated_tasks)
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate tasks: {str(e)}")
-
-app.include_router(api)"Failed to fetch tasks: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch tasks: {str(e)}")
 
 @api.post("/tasks", status_code=201)
 async def create_task(
@@ -488,7 +423,6 @@ async def update_task(
         db = get_db()
         user_id = get_user_id(x_user_id)
         
-        # Try to find by custom 'id' field first (UUID), then by ObjectId
         task = db.tasks.find_one({"id": task_id, "userId": user_id})
         
         if not task:
@@ -511,7 +445,6 @@ async def update_task(
         if "isCompleted" in update_data and update_data["isCompleted"]:
             update_data["completedAt"] = datetime.utcnow()
         
-        # Update using the same identifier
         if "id" in task:
             result = db.tasks.update_one(
                 {"id": task_id, "userId": user_id},
@@ -542,7 +475,6 @@ async def delete_task(
         db = get_db()
         user_id = get_user_id(x_user_id)
         
-        # Try to find by custom 'id' field first (UUID), then by ObjectId
         result = db.tasks.delete_one({"id": task_id, "userId": user_id})
         
         if result.deleted_count == 0:
@@ -784,4 +716,67 @@ async def get_learning(category: Optional[str] = Query(None)):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f
+        raise HTTPException(status_code=500, detail=f"Failed to fetch learning content: {str(e)}")
+
+# ======================== AI ROUTES ========================
+
+@api.post("/ai/generate-tasks")
+async def generate_ai_tasks(x_user_id: Optional[str] = Header(None)):
+    """Generate random eco-friendly tasks and save to database"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        
+        today = date.today().isoformat()
+        
+        existing_tasks = list(db.tasks.find({
+            "userId": user_id,
+            "date": today
+        }))
+        
+        if len(existing_tasks) >= 3:
+            return {
+                "message": "Tasks already generated for today",
+                "tasks": sanitize_docs(existing_tasks),
+                "count": len(existing_tasks)
+            }
+        
+        all_categories = ["Energy", "Water", "Waste", "Transport"]
+        num_tasks = random.randint(3, 4)
+        selected_categories = random.sample(all_categories, k=num_tasks)
+        
+        generated_tasks = []
+        
+        for category in selected_categories:
+            task_template = random.choice(TASK_POOL[category])
+            
+            task_id = str(uuid.uuid4())
+            task_dict = {
+                "id": task_id,
+                "userId": user_id,
+                "title": task_template["title"],
+                "details": task_template["details"],
+                "category": category,
+                "date": today,
+                "points": task_template["points"],
+                "estimatedImpact": task_template["estimatedImpact"],
+                "isCompleted": False,
+                "completedAt": None,
+                "createdAt": datetime.utcnow(),
+                "updatedAt": datetime.utcnow()
+            }
+            
+            db.tasks.insert_one(task_dict)
+            generated_tasks.append(sanitize_doc(task_dict.copy()))
+        
+        return {
+            "message": "Tasks generated successfully",
+            "tasks": generated_tasks,
+            "count": len(generated_tasks)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate tasks: {str(e)}")
+
+app.include_router(api)
