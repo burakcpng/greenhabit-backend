@@ -9,6 +9,10 @@ import uuid
 from pymongo import MongoClient, DESCENDING
 from bson import ObjectId
 
+# Import external data files
+from task_templates import TASK_POOL
+from learning_content import LEARNING_ARTICLES
+
 app = FastAPI(
     title="GreenHabit API",
     description="Sustainable habits tracking platform",
@@ -50,7 +54,6 @@ def get_db():
 def sanitize_doc(doc):
     """Convert MongoDB _id to string id"""
     if doc and "_id" in doc:
-        # If there's already an 'id' field (UUID), keep it
         if "id" not in doc:
             doc["id"] = str(doc["_id"])
         del doc["_id"]
@@ -61,6 +64,8 @@ def sanitize_docs(docs):
 
 def get_user_id(x_user_id: Optional[str] = Header(None)) -> str:
     return x_user_id or "demo-user"
+
+# ======================== MODELS ========================
 
 class CreateTaskPayload(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
@@ -77,257 +82,7 @@ class UpdateTaskPayload(BaseModel):
     category: Optional[str] = None
     points: Optional[int] = Field(None, ge=0, le=1000)
 
-# Task Templates for AI Generation - ENHANCED (from tasks.py)
-TASK_POOL = {
-    "Energy": [
-        {
-            "title": "💡 Turn off unused lights",
-            "details": "Make it a habit to switch off all lights when leaving a room. Even a few seconds makes a difference!",
-            "points": 10,
-            "estimatedImpact": "Saves ~0.3kg CO₂/day"
-        },
-        {
-            "title": "🔌 Unplug phone charger",
-            "details": "Phone chargers consume 'phantom power' even when not charging. Unplug them to save energy!",
-            "points": 5,
-            "estimatedImpact": "Saves ~0.1kg CO₂/day"
-        },
-        {
-            "title": "☀️ Use natural daylight",
-            "details": "Open curtains and blinds during the day. Let the sun light your space instead of electric bulbs!",
-            "points": 10,
-            "estimatedImpact": "Saves ~0.3kg CO₂/day"
-        },
-        {
-            "title": "🌡️ Set thermostat 1°C lower",
-            "details": "Reducing your heating by just 1 degree can save significant energy over time without much discomfort.",
-            "points": 15,
-            "estimatedImpact": "Saves ~1.0kg CO₂/day"
-        },
-        {
-            "title": "👕 Air dry laundry",
-            "details": "Skip the dryer and hang your clothes to dry naturally. Saves energy and clothes last longer!",
-            "points": 20,
-            "estimatedImpact": "Saves ~2.5kg CO₂/load"
-        },
-        {
-            "title": "🔋 Unplug all devices at night",
-            "details": "Use a power strip and turn everything off before bed. Stop vampire energy drain!",
-            "points": 15,
-            "estimatedImpact": "Saves ~0.5kg CO₂/day"
-        },
-        {
-            "title": "🪟 Close curtains at sunset",
-            "details": "Keep heat inside during cold months. Simple insulation trick that really works!",
-            "points": 10,
-            "estimatedImpact": "Saves ~0.4kg CO₂/day"
-        },
-        {
-            "title": "❄️ Clean refrigerator coils",
-            "details": "Dusty coils make your fridge work harder. Clean them every 6 months for efficiency.",
-            "points": 15,
-            "estimatedImpact": "Improves efficiency 5%"
-        },
-        {
-            "title": "🍳 Use lids when cooking",
-            "details": "Cover pots and pans to cook faster and use less energy. Works with all types of stoves!",
-            "points": 10,
-            "estimatedImpact": "Saves ~0.2kg CO₂/meal"
-        },
-        {
-            "title": "🖥️ Enable power saving mode",
-            "details": "Activate energy-saving settings on your computer, phone, and other devices.",
-            "points": 5,
-            "estimatedImpact": "Saves ~0.1kg CO₂/day"
-        },
-    ],
-    "Water": [
-        {
-            "title": "⏱️ Take 5-minute shower",
-            "details": "Challenge yourself to shower in 5 minutes or less. Use a waterproof timer to track!",
-            "points": 20,
-            "estimatedImpact": "Saves ~40L water"
-        },
-        {
-            "title": "🪥 Turn off tap while brushing",
-            "details": "Don't let water run while brushing teeth. You can save up to 8L per minute!",
-            "points": 10,
-            "estimatedImpact": "Saves ~16L/brush"
-        },
-        {
-            "title": "🔧 Fix dripping faucet",
-            "details": "Check all faucets in your home and fix any drips. One drip per second wastes 20L daily!",
-            "points": 15,
-            "estimatedImpact": "Saves ~20L/day"
-        },
-        {
-            "title": "🌧️ Collect rainwater",
-            "details": "Set up a barrel or container to collect rainwater for watering plants.",
-            "points": 15,
-            "estimatedImpact": "Saves ~10L/use"
-        },
-        {
-            "title": "🍽️ Run dishwasher when full",
-            "details": "Wait until your dishwasher is completely full before running it. No half-loads!",
-            "points": 10,
-            "estimatedImpact": "Saves ~15L/load"
-        },
-        {
-            "title": "🧊 Use a glass of water for brushing",
-            "details": "Fill a glass with water for rinsing instead of running the tap.",
-            "points": 5,
-            "estimatedImpact": "Saves ~8L/day"
-        },
-        {
-            "title": "🚿 Install low-flow showerhead",
-            "details": "Modern low-flow showerheads maintain pressure while using 40% less water.",
-            "points": 25,
-            "estimatedImpact": "Saves ~60L/shower"
-        },
-        {
-            "title": "🧺 Wash full loads of laundry",
-            "details": "Only run washing machine with full loads. Saves water and energy!",
-            "points": 15,
-            "estimatedImpact": "Saves ~50L/load"
-        },
-        {
-            "title": "🌱 Water plants in the morning",
-            "details": "Early morning watering reduces evaporation, so plants get more water.",
-            "points": 10,
-            "estimatedImpact": "Saves ~30% water"
-        },
-        {
-            "title": "🧽 Use a bowl to wash dishes",
-            "details": "Fill a bowl with soapy water instead of running tap continuously.",
-            "points": 10,
-            "estimatedImpact": "Saves ~20L/session"
-        },
-    ],
-    "Waste": [
-        {
-            "title": "♻️ Use a reusable bottle",
-            "details": "Carry your own water bottle. Say no to single-use plastic bottles forever!",
-            "points": 15,
-            "estimatedImpact": "Saves 1 plastic bottle"
-        },
-        {
-            "title": "🛍️ Bring reusable bag",
-            "details": "Take your reusable shopping bag when going to the store. Keep one in your car!",
-            "points": 10,
-            "estimatedImpact": "Saves 1 plastic bag"
-        },
-        {
-            "title": "🥬 Compost food scraps",
-            "details": "Start composting fruit peels, vegetable scraps, and coffee grounds.",
-            "points": 15,
-            "estimatedImpact": "Reduces ~0.5kg waste"
-        },
-        {
-            "title": "🥤 Refuse plastic straws",
-            "details": "Say 'no straw, please' when ordering drinks, or bring your own reusable one.",
-            "points": 5,
-            "estimatedImpact": "Saves 1 plastic straw"
-        },
-        {
-            "title": "📦 Recycle cardboard properly",
-            "details": "Flatten boxes and put them in recycling. Remove tape and labels first!",
-            "points": 10,
-            "estimatedImpact": "Saves ~0.9kg CO₂/kg"
-        },
-        {
-            "title": "🍱 Pack lunch in reusable containers",
-            "details": "Stop using disposable packaging. Invest in good quality lunch containers.",
-            "points": 15,
-            "estimatedImpact": "Saves 5 items/day"
-        },
-        {
-            "title": "☕ Use a reusable coffee cup",
-            "details": "Bring your own cup to coffee shops. Many offer discounts too!",
-            "points": 10,
-            "estimatedImpact": "Saves 1 cup/day"
-        },
-        {
-            "title": "🧻 Switch to cloth napkins",
-            "details": "Replace paper napkins with cloth ones. Wash and reuse!",
-            "points": 10,
-            "estimatedImpact": "Saves paper waste"
-        },
-        {
-            "title": "📄 Go paperless with bills",
-            "details": "Switch to digital bills and statements. Save paper and reduce clutter!",
-            "points": 5,
-            "estimatedImpact": "Saves trees"
-        },
-        {
-            "title": "🎁 Reuse gift bags and wrap",
-            "details": "Save gift wrap, bags, and ribbons to reuse for future occasions.",
-            "points": 10,
-            "estimatedImpact": "Reduces waste"
-        },
-    ],
-    "Transport": [
-        {
-            "title": "🚶 Walk short distances",
-            "details": "For trips under 1km, leave the car at home and walk. Good for health and planet!",
-            "points": 15,
-            "estimatedImpact": "Saves ~0.2kg CO₂/km"
-        },
-        {
-            "title": "🚌 Use public transport",
-            "details": "Take the bus, metro, or tram instead of driving your car today.",
-            "points": 20,
-            "estimatedImpact": "Saves ~2.0kg CO₂/trip"
-        },
-        {
-            "title": "🚲 Bike to work",
-            "details": "Use your bicycle for your commute. Zero emissions and great exercise!",
-            "points": 25,
-            "estimatedImpact": "Saves ~3.0kg CO₂/trip"
-        },
-        {
-            "title": "👥 Carpool with colleague",
-            "details": "Share your ride to work with a colleague who lives nearby.",
-            "points": 20,
-            "estimatedImpact": "Saves 50% emissions"
-        },
-        {
-            "title": "🏠 Work from home",
-            "details": "Skip the commute by working from home today if your job allows.",
-            "points": 25,
-            "estimatedImpact": "Saves full commute"
-        },
-        {
-            "title": "🛴 Use an e-scooter",
-            "details": "Try an electric scooter for medium-distance trips instead of a car.",
-            "points": 15,
-            "estimatedImpact": "Saves ~1.5kg CO₂/trip"
-        },
-        {
-            "title": "🚗 Maintain proper tire pressure",
-            "details": "Check and inflate your tires to recommended PSI. Improves fuel efficiency by 3%!",
-            "points": 10,
-            "estimatedImpact": "Saves ~0.3kg CO₂/day"
-        },
-        {
-            "title": "🛒 Combine errands into one trip",
-            "details": "Plan your route to do multiple errands in one outing instead of several trips.",
-            "points": 15,
-            "estimatedImpact": "Saves ~1.0kg CO₂"
-        },
-        {
-            "title": "✈️ Take train instead of plane",
-            "details": "For distances under 500km, trains emit 10x less CO₂ than planes.",
-            "points": 30,
-            "estimatedImpact": "Saves ~5.0kg CO₂"
-        },
-        {
-            "title": "💻 Video call instead of travel",
-            "details": "Use video conferencing for meetings instead of traveling.",
-            "points": 20,
-            "estimatedImpact": "Saves travel emissions"
-        },
-    ]
-}
+# ======================== ROOT ENDPOINTS ========================
 
 @app.get("/")
 async def root():
@@ -340,6 +95,8 @@ async def root():
 @app.get("/healthz")
 async def health_check():
     return {"ok": True}
+
+# ======================== TASK ROUTES ========================
 
 @api.get("/tasks")
 async def get_tasks(
@@ -377,11 +134,10 @@ async def create_task(
         task_date = payload.date or date.today().isoformat()
         user_id = get_user_id(x_user_id)
         
-        # Generate unique ID (from tasks.py logic)
         task_id = str(uuid.uuid4())
         
         task_dict = {
-            "id": task_id,  # ✅ Eklendi
+            "id": task_id,
             "userId": user_id,
             "title": payload.title,
             "details": payload.details,
@@ -400,7 +156,7 @@ async def create_task(
         
         return {
             "success": True,
-            "taskId": task_id,  # ✅ UUID döndür
+            "taskId": task_id,
             "message": "Task created successfully"
         }
     except HTTPException:
@@ -418,11 +174,9 @@ async def update_task(
         db = get_db()
         user_id = get_user_id(x_user_id)
         
-        # Try to find by custom 'id' field first (UUID), then by ObjectId (Enhanced logic)
         task = db.tasks.find_one({"id": task_id, "userId": user_id})
         
         if not task:
-            # Try ObjectId format fallback
             try:
                 object_id = ObjectId(task_id)
                 task = db.tasks.find_one({"_id": object_id, "userId": user_id})
@@ -442,7 +196,6 @@ async def update_task(
         if "isCompleted" in update_data and update_data["isCompleted"]:
             update_data["completedAt"] = datetime.utcnow()
         
-        # Update using the same identifier
         if "id" in task:
             result = db.tasks.update_one(
                 {"id": task_id, "userId": user_id},
@@ -473,11 +226,9 @@ async def delete_task(
         db = get_db()
         user_id = get_user_id(x_user_id)
         
-        # Try to find by custom 'id' field first (UUID), then by ObjectId (Enhanced logic)
         result = db.tasks.delete_one({"id": task_id, "userId": user_id})
         
         if result.deleted_count == 0:
-            # Try ObjectId format
             try:
                 object_id = ObjectId(task_id)
                 result = db.tasks.delete_one({"_id": object_id, "userId": user_id})
@@ -495,6 +246,8 @@ async def delete_task(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete task: {str(e)}")
+
+# ======================== STATS ROUTES ========================
 
 @api.get("/stats/weekly")
 async def weekly_stats(x_user_id: Optional[str] = Header(None)):
@@ -596,6 +349,8 @@ async def monthly_stats(x_user_id: Optional[str] = Header(None)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch stats: {str(e)}")
 
+# ======================== PREFERENCES ROUTES ========================
+
 @api.get("/preferences")
 async def get_preferences(x_user_id: Optional[str] = Header(None)):
     try:
@@ -606,8 +361,8 @@ async def get_preferences(x_user_id: Optional[str] = Header(None)):
         if not prefs:
             prefs = {
                 "userId": user_id,
-                "country": "TR",
-                "interests": ["energy", "water", "waste"],
+                "country": "EU",
+                "interests": ["Energy", "Water", "Waste", "Transport"],
                 "language": "en"
             }
             db.preferences.insert_one(prefs)
@@ -654,6 +409,8 @@ async def update_preferences(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update preferences: {str(e)}")
 
+# ======================== LEARNING ROUTES ========================
+
 @api.get("/learning")
 async def get_learning(category: Optional[str] = Query(None)):
     try:
@@ -661,45 +418,8 @@ async def get_learning(category: Optional[str] = Query(None)):
         
         count = db.learning.count_documents({})
         if count == 0:
-            seed_data = [
-                {
-                    "id": str(uuid.uuid4()), # ✅ UUID eklendi
-                    "title": "Water Conservation at Home",
-                    "details": "Water is one of our most precious resources. Simple changes in daily habits can save thousands of liters per year. Fix leaky faucets - a single dripping faucet can waste up to 20 gallons per day. Take shorter showers - reducing your shower time by just 2 minutes can save up to 10 gallons of water. Turn off the tap while brushing teeth or shaving. Use a dishwasher instead of hand washing - modern dishwashers use less water. Collect rainwater for watering plants. Install low-flow showerheads and faucet aerators. Water your garden early morning or late evening to reduce evaporation. Choose drought-resistant plants for your garden. Use a broom instead of a hose to clean driveways.",
-                    "category": "Water"
-                },
-                {
-                    "id": str(uuid.uuid4()),
-                    "title": "Energy Efficiency Tips",
-                    "details": "Reducing energy consumption helps the environment and saves money. Switch to LED bulbs - they use 75% less energy than incandescent bulbs and last 25 times longer. Unplug electronics when not in use - standby power can account for 10% of household energy use. Use natural light when possible. Set your thermostat efficiently - each degree lower in winter saves about 3% on heating bills. Wash clothes in cold water - 90% of washing machine energy goes to heating water. Air dry clothes when possible. Use smart power strips to eliminate phantom loads. Seal windows and doors to prevent drafts. Consider solar panels for long-term savings. Choose energy-efficient appliances with high Energy Star ratings.",
-                    "category": "Energy"
-                },
-                {
-                    "id": str(uuid.uuid4()),
-                    "title": "Reducing Plastic Waste",
-                    "details": "Plastic pollution is one of the biggest environmental challenges. Over 8 million tons of plastic enter our oceans every year. Bring reusable bags when shopping. Use a reusable water bottle - the average person could save 167 plastic bottles per year. Say no to straws or use metal/bamboo alternatives. Choose products with minimal packaging. Buy in bulk to reduce packaging waste. Use beeswax wraps instead of plastic wrap. Choose bar soap and shampoo bars over bottled products. Recycle properly - learn what can and cannot be recycled in your area. Support businesses that use sustainable packaging. Participate in local beach or park cleanups.",
-                    "category": "Waste"
-                },
-                {
-                    "id": str(uuid.uuid4()),
-                    "title": "Sustainable Transportation",
-                    "details": "Transportation accounts for about 29% of greenhouse gas emissions. Walk or bike for short trips - it's healthy and emission-free. Use public transportation when possible. Carpool with colleagues or neighbors. If you drive, maintain your vehicle properly - properly inflated tires improve fuel efficiency. Combine errands into one trip to reduce total driving. Consider an electric or hybrid vehicle for your next car. Work from home when possible. Plan routes efficiently to avoid traffic and reduce fuel consumption. Fly less - one transatlantic flight can emit more CO2 than a year of driving. When flying is necessary, choose direct flights and offset your carbon.",
-                    "category": "Transport"
-                },
-                {
-                    "id": str(uuid.uuid4()),
-                    "title": "Composting 101",
-                    "details": "Composting turns food scraps and yard waste into nutrient-rich soil. About 30% of household waste can be composted. Start with a compost bin or designated area in your yard. Add 'green' materials like fruit and vegetable scraps, coffee grounds, and grass clippings. Balance with 'brown' materials like dried leaves, cardboard, and paper. Keep your compost moist but not wet. Turn it regularly to add oxygen. Avoid adding meat, dairy, or oily foods. Compost is ready when it's dark, crumbly, and smells earthy. Use it to enrich garden soil, potted plants, or lawn. Even apartment dwellers can compost with bokashi or vermicomposting methods.",
-                    "category": "Waste"
-                },
-                {
-                    "id": str(uuid.uuid4()),
-                    "title": "Understanding Your Carbon Footprint",
-                    "details": "A carbon footprint measures the total greenhouse gas emissions caused by an individual, event, organization, or product. The average person's carbon footprint in developed countries is about 10-20 tons of CO2 per year. Major contributors include: transportation (especially flying), home energy use, diet (meat production is carbon-intensive), and consumer goods. Calculate your footprint using online calculators to understand your impact. Reduce your footprint by: eating less meat, reducing air travel, improving home energy efficiency, buying local and seasonal products, reducing, reusing, and recycling. Carbon offsetting can help neutralize emissions you cannot eliminate. Small daily changes add up to significant impact over time.",
-                    "category": "General"
-                }
-            ]
-            db.learning.insert_many(seed_data)
+            # Use imported learning articles
+            db.learning.insert_many(LEARNING_ARTICLES)
         
         query = {}
         if category:
@@ -712,15 +432,14 @@ async def get_learning(category: Optional[str] = Query(None)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch learning content: {str(e)}")
 
+# ======================== AI ROUTES ========================
+
 @api.post("/ai/generate-tasks")
 async def generate_ai_tasks():
     """Generate random eco-friendly tasks from different categories"""
-    # Use UTC+3 for Turkey timezone
-    from datetime import timezone, timedelta as td
-    turkey_tz = timezone(td(hours=3))
-    today = datetime.now(turkey_tz).date().isoformat()
+    today = date.today().isoformat()
     
-    # Rastgele 3-4 kategori seç
+    # Generate 3-4 random tasks
     all_categories = ["Energy", "Water", "Waste", "Transport"]
     num_tasks = random.randint(3, 4)
     selected_categories = random.sample(all_categories, k=num_tasks)
@@ -728,7 +447,7 @@ async def generate_ai_tasks():
     generated_tasks = []
     
     for category in selected_categories:
-        # Her kategoriden rastgele bir task seç
+        # Pick random task from imported TASK_POOL
         task_template = random.choice(TASK_POOL[category])
         
         task = {
@@ -748,4 +467,3 @@ async def generate_ai_tasks():
     }
 
 app.include_router(api)
-
