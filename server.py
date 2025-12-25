@@ -193,9 +193,13 @@ async def update_task(
         
         update_data["updatedAt"] = datetime.utcnow()
         
-        if "isCompleted" in update_data and update_data["isCompleted"]:
+        # Check if task is being completed
+        is_completing_task = "isCompleted" in update_data and update_data["isCompleted"] and not task.get("isCompleted", False)
+        
+        if is_completing_task:
             update_data["completedAt"] = datetime.utcnow()
         
+        # Update task
         if "id" in task:
             result = db.tasks.update_one(
                 {"id": task_id, "userId": user_id},
@@ -207,11 +211,32 @@ async def update_task(
                 {"$set": update_data}
             )
         
-        return {
+        # ✅ NEW: If completing task, calculate rewards and check achievements
+        response = {
             "success": True,
             "message": "Task updated successfully",
             "modified": result.modified_count > 0
         }
+        
+        if is_completing_task:
+            from rewards_system import calculate_rewards, check_new_achievements, calculate_streak
+            
+            # Calculate rewards
+            rewards = await calculate_rewards(db, user_id, task)
+            
+            # Check for new achievements
+            new_achievements = await check_new_achievements(db, user_id)
+            
+            # Get updated streak info
+            streak_info = await calculate_streak(db, user_id)
+            
+            response["rewards"] = rewards
+            response["newAchievements"] = new_achievements
+            response["streakInfo"] = streak_info
+            response["celebration"] = True  # Frontend trigger
+        
+        return response
+        
     except HTTPException:
         raise
     except Exception as e:
@@ -465,5 +490,77 @@ async def generate_ai_tasks():
         "tasks": generated_tasks,
         "count": len(generated_tasks)
     }
+
+app.include_router(api)
+
+# ======================== NEW: USER PROFILE & ACHIEVEMENTS ========================
+
+@api.get("/profile")
+async def get_profile(x_user_id: Optional[str] = Header(None)):
+    """Get user profile with achievements and stats"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        
+        from rewards_system import get_user_profile, calculate_streak
+        
+        profile = await get_user_profile(db, user_id)
+        streak_info = await calculate_streak(db, user_id)
+        
+        # Merge streak info into profile
+        profile["currentStreak"] = streak_info["currentStreak"]
+        profile["longestStreak"] = streak_info["longestStreak"]
+        
+        return profile
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch profile: {str(e)}")
+
+@api.get("/achievements")
+async def get_achievements(x_user_id: Optional[str] = Header(None)):
+    """Get all achievements with unlock status"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        
+        from rewards_system import ACHIEVEMENTS, get_user_profile
+        
+        profile = await get_user_profile(db, user_id)
+        unlocked = set(profile.get("unlockedAchievements", []))
+        
+        achievements_list = []
+        for achievement_id, achievement in ACHIEVEMENTS.items():
+            achievements_list.append({
+                **achievement,
+                "unlocked": achievement_id in unlocked
+            })
+        
+        return {
+            "achievements": achievements_list,
+            "totalUnlocked": len(unlocked),
+            "totalAvailable": len(ACHIEVEMENTS)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch achievements: {str(e)}")
+
+@api.get("/streak")
+async def get_streak(x_user_id: Optional[str] = Header(None)):
+    """Get streak information"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        
+        from rewards_system import calculate_streak
+        
+        streak_info = await calculate_streak(db, user_id)
+        
+        return streak_info
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch streak: {str(e)}")
 
 app.include_router(api)
