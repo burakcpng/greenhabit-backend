@@ -5,7 +5,7 @@ from datetime import datetime, date, timedelta
 from typing import List, Optional
 import os
 import random
-import uuid  
+import uuid
 from pymongo import MongoClient, DESCENDING
 from bson import ObjectId
 
@@ -31,39 +31,76 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ======================== GLOBAL DATABASE CLIENT ========================
+
+# ✅ FIX 3: Connection Pooling - Global MongoDB Client
+_mongo_client = None
+_db = None
+
 def get_db():
-    mongo_url = os.getenv("MONGO_URL")
-    db_name = os.getenv("DB_NAME", "GreenHabit_db")
+    """
+    Get database connection with connection pooling
+    Creates client only once and reuses it
+    """
+    global _mongo_client, _db
     
-    if not mongo_url:
-        raise HTTPException(status_code=500, detail="Database configuration missing")
+    if _mongo_client is None:
+        mongo_url = os.getenv("MONGO_URL")
+        db_name = os.getenv("DB_NAME", "GreenHabit_db")
+        
+        if not mongo_url:
+            raise HTTPException(status_code=500, detail="Database configuration missing")
+        
+        try:
+            _mongo_client = MongoClient(
+                mongo_url,
+                serverSelectionTimeoutMS=3000,
+                connectTimeoutMS=3000,
+                maxPoolSize=10,
+                retryWrites=True
+            )
+            _mongo_client.admin.command('ping')
+            _db = _mongo_client[db_name]
+            print("✅ MongoDB connection established")
+        except Exception as e:
+            raise HTTPException(status_code=503, detail=f"Database unavailable: {str(e)}")
     
-    try:
-        client = MongoClient(
-            mongo_url,
-            serverSelectionTimeoutMS=3000,
-            connectTimeoutMS=3000,
-            maxPoolSize=10,
-            retryWrites=True
-        )
-        client.admin.command('ping')
-        return client[db_name]
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Database unavailable: {str(e)}")
+    return _db
 
 def sanitize_doc(doc):
-    """Convert MongoDB _id to string id"""
+    """
+    Convert MongoDB _id to string id
+    ✅ FIX 1: Standardize date formats to ISO8601 without microseconds
+    """
     if doc and "_id" in doc:
         if "id" not in doc:
             doc["id"] = str(doc["_id"])
         del doc["_id"]
+    
+    # ✅ FIX 1: Convert datetime fields to ISO8601 string (YYYY-MM-DDTHH:MM:SS)
+    date_fields = ["createdAt", "updatedAt", "completedAt"]
+    for field in date_fields:
+        if field in doc and doc[field] is not None:
+            if isinstance(doc[field], datetime):
+                # Remove microseconds and convert to ISO format
+                doc[field] = doc[field].replace(microsecond=0).isoformat() + "Z"
+    
     return doc
 
 def sanitize_docs(docs):
     return [sanitize_doc(doc) for doc in docs]
 
 def get_user_id(x_user_id: Optional[str] = Header(None)) -> str:
-    return x_user_id or "demo-user"
+    """
+    Get user ID from header
+    ✅ FIX 4: Never generate ID on backend, always require from client
+    """
+    if not x_user_id or x_user_id.strip() == "":
+        raise HTTPException(
+            status_code=401,
+            detail="User ID required. Please provide X-User-Id header."
+        )
+    return x_user_id
 
 # ======================== MODELS ========================
 
@@ -493,6 +530,28 @@ async def generate_ai_tasks():
 
 app.include_router(api)
 
+# ======================== LIFECYCLE HANDLERS ========================
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize resources on startup"""
+    print("🚀 GreenHabit API starting up...")
+    # Trigger DB connection
+    try:
+        get_db()
+        print("✅ Database connected successfully")
+    except Exception as e:
+        print(f"❌ Database connection failed: {e}")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup resources on shutdown"""
+    global _mongo_client
+    if _mongo_client:
+        _mongo_client.close()
+        print("👋 MongoDB connection closed")
+    print("👋 GreenHabit API shutting down...")
+
 # ======================== NEW: USER PROFILE & ACHIEVEMENTS ========================
 
 @api.get("/profile")
@@ -562,5 +621,4 @@ async def get_streak(x_user_id: Optional[str] = Header(None)):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch streak: {str(e)}")
-
 app.include_router(api)
