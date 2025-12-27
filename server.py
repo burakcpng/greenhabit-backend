@@ -528,8 +528,6 @@ async def generate_ai_tasks():
         "count": len(generated_tasks)
     }
 
-app.include_router(api)
-
 # ======================== LIFECYCLE HANDLERS ========================
 
 @app.on_event("startup")
