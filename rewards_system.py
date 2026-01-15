@@ -111,7 +111,7 @@ ACHIEVEMENTS = {
 
 # ======================== STREAK FUNCTIONS ========================
 
-async def calculate_streak(db, user_id: str) -> Dict:
+def calculate_streak(db, user_id: str) -> Dict:
     """
     Calculate current streak and longest streak
     Returns: {currentStreak: int, longestStreak: int, lastCompletedDate: str}
@@ -174,7 +174,7 @@ async def calculate_streak(db, user_id: str) -> Dict:
 
 # ======================== REWARDS CALCULATION ========================
 
-async def calculate_rewards(db, user_id: str, task: dict) -> Dict:
+def calculate_rewards(db, user_id: str, task: dict) -> Dict:
     """
     Calculate rewards for completing a task
     Returns points breakdown and bonuses
@@ -182,7 +182,7 @@ async def calculate_rewards(db, user_id: str, task: dict) -> Dict:
     base_points = task.get("points", 10)
     
     # Get streak info
-    streak_info = await calculate_streak(db, user_id)
+    streak_info = calculate_streak(db, user_id)
     current_streak = streak_info["currentStreak"]
     
     # Streak bonus: 2 points per day, max 50
@@ -216,7 +216,7 @@ async def calculate_rewards(db, user_id: str, task: dict) -> Dict:
 
 # ======================== ACHIEVEMENT CHECK ========================
 
-async def check_new_achievements(db, user_id: str) -> List[Dict]:
+def check_new_achievements(db, user_id: str) -> List[Dict]:
     """
     Check if user unlocked any new achievements
     Returns list of newly unlocked achievements
@@ -244,7 +244,7 @@ async def check_new_achievements(db, user_id: str) -> List[Dict]:
         "isCompleted": True
     })
     
-    streak_info = await calculate_streak(db, user_id)
+    streak_info = calculate_streak(db, user_id)
     current_streak = streak_info["currentStreak"]
     
     # Count tasks by category
@@ -327,7 +327,7 @@ async def check_new_achievements(db, user_id: str) -> List[Dict]:
 
 # ======================== USER PROFILE ========================
 
-async def get_user_profile(db, user_id: str) -> Dict:
+def get_user_profile(db, user_id: str) -> Dict:
     """Get or create user profile with stats"""
     profile = db.user_profiles.find_one({"userId": user_id})
     
@@ -338,7 +338,7 @@ async def get_user_profile(db, user_id: str) -> Dict:
             "isCompleted": True
         })
         
-        streak_info = await calculate_streak(db, user_id)
+        streak_info = calculate_streak(db, user_id)
         
         profile = {
             "userId": user_id,

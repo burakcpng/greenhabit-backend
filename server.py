@@ -136,7 +136,7 @@ async def health_check():
 # ======================== TASK ROUTES ========================
 
 @api.get("/tasks")
-async def get_tasks(
+def get_tasks(
     date: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
     completed: Optional[bool] = Query(None),
@@ -163,7 +163,7 @@ async def get_tasks(
         raise HTTPException(status_code=500, detail=f"Failed to fetch tasks: {str(e)}")
 
 @api.post("/tasks", status_code=201)
-async def create_task(
+def create_task(
     payload: CreateTaskPayload,
     x_user_id: Optional[str] = Header(None)
 ):
@@ -202,7 +202,7 @@ async def create_task(
         raise HTTPException(status_code=500, detail=f"Failed to create task: {str(e)}")
 
 @api.patch("/tasks/{task_id}")
-async def update_task(
+def update_task(
     task_id: str,
     payload: UpdateTaskPayload,
     x_user_id: Optional[str] = Header(None)
@@ -259,13 +259,13 @@ async def update_task(
             from rewards_system import calculate_rewards, check_new_achievements, calculate_streak
             
             # Calculate rewards
-            rewards = await calculate_rewards(db, user_id, task)
+            rewards = calculate_rewards(db, user_id, task)
             
             # Check for new achievements
-            new_achievements = await check_new_achievements(db, user_id)
+            new_achievements = check_new_achievements(db, user_id)
             
             # Get updated streak info
-            streak_info = await calculate_streak(db, user_id)
+            streak_info = calculate_streak(db, user_id)
             
             response["rewards"] = rewards
             response["newAchievements"] = new_achievements
@@ -280,7 +280,7 @@ async def update_task(
         raise HTTPException(status_code=500, detail=f"Failed to update task: {str(e)}")
 
 @api.delete("/tasks/{task_id}")
-async def delete_task(
+def delete_task(
     task_id: str,
     x_user_id: Optional[str] = Header(None)
 ):
@@ -312,7 +312,7 @@ async def delete_task(
 # ======================== STATS ROUTES ========================
 
 @api.get("/stats/weekly")
-async def weekly_stats(x_user_id: Optional[str] = Header(None)):
+def weekly_stats(x_user_id: Optional[str] = Header(None)):
     try:
         db = get_db()
         user_id = get_user_id(x_user_id)
@@ -361,7 +361,7 @@ async def weekly_stats(x_user_id: Optional[str] = Header(None)):
         raise HTTPException(status_code=500, detail=f"Failed to fetch stats: {str(e)}")
 
 @api.get("/stats/monthly")
-async def monthly_stats(x_user_id: Optional[str] = Header(None)):
+def monthly_stats(x_user_id: Optional[str] = Header(None)):
     try:
         db = get_db()
         user_id = get_user_id(x_user_id)
@@ -531,7 +531,7 @@ async def generate_ai_tasks():
 # ======================== LIFECYCLE HANDLERS ========================
 
 @app.on_event("startup")
-async def startup_event():
+def startup_event():
     """Initialize resources on startup"""
     print("🚀 GreenHabit API starting up...")
     # Trigger DB connection
@@ -542,7 +542,7 @@ async def startup_event():
         print(f"❌ Database connection failed: {e}")
 
 @app.on_event("shutdown")
-async def shutdown_event():
+def shutdown_event():
     """Cleanup resources on shutdown"""
     global _mongo_client
     if _mongo_client:
@@ -553,7 +553,7 @@ async def shutdown_event():
 # ======================== NEW: USER PROFILE & ACHIEVEMENTS ========================
 
 @api.get("/profile")
-async def get_profile(x_user_id: Optional[str] = Header(None)):
+def get_profile(x_user_id: Optional[str] = Header(None)):
     """Get user profile with achievements and stats"""
     try:
         db = get_db()
@@ -561,8 +561,8 @@ async def get_profile(x_user_id: Optional[str] = Header(None)):
         
         from rewards_system import get_user_profile, calculate_streak
         
-        profile = await get_user_profile(db, user_id)
-        streak_info = await calculate_streak(db, user_id)
+        profile = get_user_profile(db, user_id)
+        streak_info = calculate_streak(db, user_id)
         
         # Merge streak info into profile
         profile["currentStreak"] = streak_info["currentStreak"]
@@ -575,7 +575,7 @@ async def get_profile(x_user_id: Optional[str] = Header(None)):
         raise HTTPException(status_code=500, detail=f"Failed to fetch profile: {str(e)}")
 
 @api.get("/achievements")
-async def get_achievements(x_user_id: Optional[str] = Header(None)):
+def get_achievements(x_user_id: Optional[str] = Header(None)):
     """Get all achievements with unlock status"""
     try:
         db = get_db()
@@ -583,7 +583,7 @@ async def get_achievements(x_user_id: Optional[str] = Header(None)):
         
         from rewards_system import ACHIEVEMENTS, get_user_profile
         
-        profile = await get_user_profile(db, user_id)
+        profile = get_user_profile(db, user_id)
         unlocked = set(profile.get("unlockedAchievements", []))
         
         achievements_list = []
@@ -604,7 +604,7 @@ async def get_achievements(x_user_id: Optional[str] = Header(None)):
         raise HTTPException(status_code=500, detail=f"Failed to fetch achievements: {str(e)}")
 
 @api.get("/streak")
-async def get_streak(x_user_id: Optional[str] = Header(None)):
+def get_streak(x_user_id: Optional[str] = Header(None)):
     """Get streak information"""
     try:
         db = get_db()
@@ -612,7 +612,7 @@ async def get_streak(x_user_id: Optional[str] = Header(None)):
         
         from rewards_system import calculate_streak
         
-        streak_info = await calculate_streak(db, user_id)
+        streak_info = calculate_streak(db, user_id)
         
         return streak_info
     except HTTPException:
@@ -637,7 +637,7 @@ def generate_share_id():
     return "".join(random.choice(chars) for _ in range(6))
 
 @api.post("/share")
-async def share_task(payload: ShareTaskPayload, x_user_id: Optional[str] = Header(None)):
+def share_task(payload: ShareTaskPayload, x_user_id: Optional[str] = Header(None)):
     """Create a short share link for a task"""
     try:
         db = get_db()
@@ -672,7 +672,7 @@ async def share_task(payload: ShareTaskPayload, x_user_id: Optional[str] = Heade
         raise HTTPException(status_code=500, detail=f"Failed to share task: {str(e)}")
 
 @api.get("/share/{share_id}")
-async def get_shared_task(share_id: str):
+def get_shared_task(share_id: str):
     """Get shared task details"""
     try:
         db = get_db()
@@ -709,7 +709,7 @@ async def apple_app_site_association():
     return JSONResponse(content=content)
 
 @app.get("/share/{share_id}", response_class=HTMLResponse)
-async def share_landing_page(share_id: str):
+def share_landing_page(share_id: str):
     """HTML Landing Page for when link is opened in browser"""
     try:
         db = get_db()
