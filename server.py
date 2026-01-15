@@ -700,7 +700,7 @@ async def apple_app_site_association():
             "apps": [],
             "details": [
                 {
-                    "appID": "KV78923456.com.greenhabit.app", # REPLACE WITH REAL TEAMID.BUNDLEID
+                    "appID": "9264X3737M.com.burakcpng.GreenHabit", 
                     "paths": ["/share/*"]
                 }
             ]
