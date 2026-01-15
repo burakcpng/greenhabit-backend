@@ -664,7 +664,7 @@ async def share_task(payload: ShareTaskPayload, x_user_id: Optional[str] = Heade
         return {
             "success": True,
             "shareId": share_id,
-            "shareUrl": f"greenhabit://share?id={share_id}"
+            "shareUrl": f"https://greenhabit-backend.onrender.com/share/{share_id}"
         }
     except HTTPException:
         raise
@@ -688,3 +688,66 @@ async def get_shared_task(share_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to fetch shared task: {str(e)}")
 
 app.include_router(api)
+
+# ======================== WEB/DEEP LINK ROUTES ========================
+from fastapi.responses import JSONResponse, HTMLResponse
+
+@app.get("/.well-known/apple-app-site-association")
+async def apple_app_site_association():
+    """Serve AASA file for iOS Universal Links"""
+    content = {
+        "applinks": {
+            "apps": [],
+            "details": [
+                {
+                    "appID": "KV78923456.com.greenhabit.app", # REPLACE WITH REAL TEAMID.BUNDLEID
+                    "paths": ["/share/*"]
+                }
+            ]
+        }
+    }
+    return JSONResponse(content=content)
+
+@app.get("/share/{share_id}", response_class=HTMLResponse)
+async def share_landing_page(share_id: str):
+    """HTML Landing Page for when link is opened in browser"""
+    try:
+        db = get_db()
+        task = db.shared_tasks.find_one({"shareId": share_id})
+        
+        title = task.get('title', 'Eco Task') if task else "Eco Task"
+        points = task.get('points', 0) if task else 0
+        ios_url = f"greenhabit://share?id={share_id}" # Fallback custom scheme
+        
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>{title} - GreenHabit</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <meta property="og:title" content="{title}">
+            <meta property="og:description" content="Earn {points} points and save carbon with GreenHabit!">
+            <style>
+                body {{ font-family: -apple-system, sans-serif; text-align: center; padding: 40px; background: #0b1c2d; color: white; }}
+                .card {{ background: rgba(255,255,255,0.1); padding: 20px; border-radius: 20px; margin: 20px auto; max-width: 400px; }}
+                .btn {{ display: block; width: 100%; padding: 15px; margin: 10px 0; border-radius: 12px; text-decoration: none; font-weight: bold; }}
+                .btn-primary {{ background: #00E676; color: #003300; }}
+                .btn-secondary {{ background: rgba(255,255,255,0.2); color: white; }}
+            </style>
+        </head>
+        <body>
+            <h1>GreenHabit</h1>
+            <div class="card">
+                <h2>{title}</h2>
+                <p>Earn {points} Points</p>
+                <br>
+                <!-- Try to open App via Custom Scheme as fallback -->
+                <a href="{ios_url}" class="btn btn-primary">Open in App</a>
+                <a href="#" class="btn btn-secondary">Download on App Store</a>
+            </div>
+        </body>
+        </html>
+        """
+        return HTMLResponse(content=html_content)
+    except Exception:
+        return HTMLResponse(content="<h1>Task not found</h1>", status_code=404)
