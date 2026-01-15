@@ -717,33 +717,144 @@ async def share_landing_page(share_id: str):
         
         title = task.get('title', 'Eco Task') if task else "Eco Task"
         points = task.get('points', 0) if task else 0
+        details = task.get('details', 'Join me on GreenHabit!') if task else ""
         ios_url = f"greenhabit://share?id={share_id}" # Fallback custom scheme
+        universal_url = f"https://greenhabit-backend.onrender.com/share/{share_id}"
         
         html_content = f"""
         <!DOCTYPE html>
-        <html>
+        <html lang="en">
         <head>
-            <title>{title} - GreenHabit</title>
-            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            
+            <title>{title} • GreenHabit</title>
             <meta property="og:title" content="{title}">
             <meta property="og:description" content="Earn {points} points and save carbon with GreenHabit!">
+            <meta name="apple-itunes-app" content="app-id=YOUR_APP_ID, app-argument={universal_url}">
+            
             <style>
-                body {{ font-family: -apple-system, sans-serif; text-align: center; padding: 40px; background: #0b1c2d; color: white; }}
-                .card {{ background: rgba(255,255,255,0.1); padding: 20px; border-radius: 20px; margin: 20px auto; max-width: 400px; }}
-                .btn {{ display: block; width: 100%; padding: 15px; margin: 10px 0; border-radius: 12px; text-decoration: none; font-weight: bold; }}
-                .btn-primary {{ background: #00E676; color: #003300; }}
-                .btn-secondary {{ background: rgba(255,255,255,0.2); color: white; }}
+                :root {{
+                    --bg-color: #0b1c2d;
+                    --card-bg: rgba(255, 255, 255, 0.08);
+                    --text-primary: #FFFFFF;
+                    --text-secondary: rgba(255, 255, 255, 0.6);
+                    --accent: #00E676;
+                    --accent-dim: rgba(0, 230, 118, 0.15);
+                }}
+                
+                body {{
+                    margin: 0;
+                    padding: 0;
+                    background-color: var(--bg-color);
+                    color: var(--text-primary);
+                    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    min-height: 100vh;
+                    -webkit-font-smoothing: antialiased;
+                }}
+                
+                .container {{
+                    width: 90%;
+                    max-width: 400px;
+                    text-align: center;
+                    padding: 40px 24px;
+                }}
+                
+                .logo {{
+                    width: 80px;
+                    height: 80px;
+                    background: linear-gradient(135deg, #00E676 0%, #00B359 100%);
+                    border-radius: 22px;
+                    margin: 0 auto 32px;
+                    box-shadow: 0 12px 24px rgba(0, 230, 118, 0.2);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 40px;
+                }}
+                
+                h1 {{
+                    font-size: 28px;
+                    font-weight: 700;
+                    margin: 0 0 12px;
+                    letter-spacing: -0.5px;
+                    line-height: 1.2;
+                }}
+                
+                .badge {{
+                    display: inline-block;
+                    background: var(--accent-dim);
+                    color: var(--accent);
+                    padding: 6px 14px;
+                    border-radius: 100px;
+                    font-size: 14px;
+                    font-weight: 600;
+                    margin-bottom: 24px;
+                }}
+                
+                p {{
+                    font-size: 16px;
+                    line-height: 1.5;
+                    color: var(--text-secondary);
+                    margin: 0 0 40px;
+                }}
+                
+                .btn {{
+                    display: block;
+                    width: 100%;
+                    padding: 16px;
+                    border-radius: 16px;
+                    font-size: 17px;
+                    font-weight: 600;
+                    text-decoration: none;
+                    transition: transform 0.1s ease, opacity 0.2s;
+                    box-sizing: border-box;
+                    cursor: pointer;
+                    margin-bottom: 16px;
+                }}
+                
+                .btn:active {{
+                    transform: scale(0.98);
+                }}
+                
+                .btn-primary {{
+                    background: var(--accent);
+                    color: #003b1c;
+                    box-shadow: 0 4px 12px rgba(0, 230, 118, 0.3);
+                }}
+                
+                .btn-secondary {{
+                    background: var(--card-bg);
+                    color: var(--text-primary);
+                    backdrop-filter: blur(10px);
+                    -webkit-backdrop-filter: blur(10px);
+                }}
+
+                .footer {{
+                    margin-top: 40px;
+                    font-size: 13px;
+                    color: var(--text-secondary);
+                    opacity: 0.5;
+                }}
             </style>
         </head>
         <body>
-            <h1>GreenHabit</h1>
-            <div class="card">
-                <h2>{title}</h2>
-                <p>Earn {points} Points</p>
-                <br>
-                <!-- Try to open App via Custom Scheme as fallback -->
-                <a href="{ios_url}" class="btn btn-primary">Open in App</a>
+            <div class="container">
+                <div class="logo">🌿</div>
+                
+                <h1>{title}</h1>
+                <div class="badge">+{points} Points</div>
+                
+                <p>{details}</p>
+                
+                <a href="{ios_url}" class="btn btn-primary">Open in GreenHabit</a>
                 <a href="#" class="btn btn-secondary">Download on App Store</a>
+                
+                <div class="footer">GreenHabit • Sustainable Living</div>
             </div>
         </body>
         </html>
