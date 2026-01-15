@@ -619,4 +619,72 @@ async def get_streak(x_user_id: Optional[str] = Header(None)):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch streak: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch streak: {str(e)}")
+
+# ======================== NEW: SHARING ROUTES ========================
+
+class ShareTaskPayload(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    details: str = Field(..., max_length=1000)
+    category: str
+    points: int = Field(..., ge=0, le=1000)
+    estimatedImpact: str = Field(..., max_length=200)
+
+def generate_share_id():
+    """Generate a short 6-character ID"""
+    chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # Removed ambiguous chars (I, 1, O, 0)
+    return "".join(random.choice(chars) for _ in range(6))
+
+@api.post("/share")
+async def share_task(payload: ShareTaskPayload, x_user_id: Optional[str] = Header(None)):
+    """Create a short share link for a task"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        
+        # Generate unique ID
+        share_id = generate_share_id()
+        while db.shared_tasks.find_one({"shareId": share_id}):
+            share_id = generate_share_id()
+        
+        share_doc = {
+            "shareId": share_id,
+            "creatorId": user_id,
+            "title": payload.title,
+            "details": payload.details,
+            "category": payload.category,
+            "points": payload.points,
+            "estimatedImpact": payload.estimatedImpact,
+            "createdAt": datetime.utcnow()
+        }
+        
+        db.shared_tasks.insert_one(share_doc)
+        
+        return {
+            "success": True,
+            "shareId": share_id,
+            "shareUrl": f"greenhabit://share?id={share_id}"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to share task: {str(e)}")
+
+@api.get("/share/{share_id}")
+async def get_shared_task(share_id: str):
+    """Get shared task details"""
+    try:
+        db = get_db()
+        
+        task = db.shared_tasks.find_one({"shareId": share_id})
+        if not task:
+            raise HTTPException(status_code=404, detail="Shared task not found")
+        
+        return sanitize_doc(task)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch shared task: {str(e)}")
+
 app.include_router(api)
