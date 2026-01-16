@@ -1,11 +1,12 @@
 # ======================== CORE FRAMEWORK ========================
-fastapi==0.110.1
-uvicorn[standard]==0.25.0
-gunicorn==23.0.0
+fastapi>=0.110.1
+uvicorn[standard]>=0.25.0
+gunicorn>=23.0.0
 python-multipart>=0.0.9
 
 # ======================== DATABASE ========================
-pymongo==4.5.0
+# MongoDB driver - supports aggregation pipelines for ranking/social features
+pymongo>=4.5.0
 dnspython>=2.6.0
 
 # ======================== DATA VALIDATION ========================

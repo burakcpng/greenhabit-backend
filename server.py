@@ -536,8 +536,12 @@ def startup_event():
     print("🚀 GreenHabit API starting up...")
     # Trigger DB connection
     try:
-        get_db()
+        db = get_db()
         print("✅ Database connected successfully")
+        
+        # Create social indexes
+        from social_system import ensure_social_indexes
+        ensure_social_indexes(db)
     except Exception as e:
         print(f"❌ Database connection failed: {e}")
 
@@ -687,7 +691,254 @@ def get_shared_task(share_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch shared task: {str(e)}")
 
+# ======================== SOCIAL SYSTEM ROUTES ========================
+
+# Pydantic models for social endpoints
+class ProfileUpdatePayload(BaseModel):
+    displayName: Optional[str] = Field(None, max_length=50)
+    bio: Optional[str] = Field(None, max_length=200)
+
+class PrivacySettingsPayload(BaseModel):
+    profilePublic: Optional[bool] = None
+    showAchievements: Optional[bool] = None
+    showStats: Optional[bool] = None
+    showFollowers: Optional[bool] = None
+    appearInLeaderboard: Optional[bool] = None
+
+# --- Ranking Endpoints ---
+
+@api.get("/ranking")
+def get_ranking(
+    limit: int = Query(50, ge=1, le=100),
+    x_user_id: Optional[str] = Header(None)
+):
+    """Get global leaderboard"""
+    try:
+        db = get_db()
+        from social_system import get_global_ranking
+        
+        ranking = get_global_ranking(db, limit)
+        return ranking
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch ranking: {str(e)}")
+
+@api.get("/ranking/me")
+def get_my_rank(x_user_id: Optional[str] = Header(None)):
+    """Get current user's rank and nearby users"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from social_system import get_user_rank
+        
+        rank_info = get_user_rank(db, user_id)
+        return rank_info
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch rank: {str(e)}")
+
+# --- Social Profile Endpoints ---
+
+@api.get("/social/profile")
+def get_social_profile_endpoint(x_user_id: Optional[str] = Header(None)):
+    """Get current user's extended social profile"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from social_system import get_social_profile, get_user_rank
+        
+        profile = get_social_profile(db, user_id)
+        
+        # Add rank
+        rank_info = get_user_rank(db, user_id)
+        profile["rank"] = rank_info["rank"]
+        
+        return profile
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch profile: {str(e)}")
+
+@api.patch("/social/profile")
+def update_social_profile(
+    payload: ProfileUpdatePayload,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Update current user's profile (displayName, bio)"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from social_system import update_user_profile
+        
+        profile = update_user_profile(db, user_id, payload.displayName, payload.bio)
+        return profile
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update profile: {str(e)}")
+
+@api.get("/users/{target_id}/profile")
+def get_public_profile(
+    target_id: str,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Get another user's public profile"""
+    try:
+        db = get_db()
+        viewer_id = None
+        try:
+            viewer_id = get_user_id(x_user_id)
+        except:
+            pass
+        
+        from social_system import get_social_profile, get_user_rank
+        
+        # Check if profile is public
+        privacy = db.user_privacy.find_one({"userId": target_id}) or {"profilePublic": True}
+        
+        if not privacy.get("profilePublic", True) and viewer_id != target_id:
+            # Check if viewer is following
+            is_following = db.follows.count_documents({
+                "followerId": viewer_id,
+                "followedId": target_id
+            }) > 0 if viewer_id else False
+            
+            if not is_following:
+                return {
+                    "userId": target_id,
+                    "isPrivate": True,
+                    "message": "This profile is private"
+                }
+        
+        profile = get_social_profile(db, target_id, viewer_id)
+        
+        # Add rank
+        rank_info = get_user_rank(db, target_id)
+        profile["rank"] = rank_info["rank"]
+        
+        return profile
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch profile: {str(e)}")
+
+# --- Follow System Endpoints ---
+
+@api.post("/users/{target_id}/follow")
+def follow_user_endpoint(
+    target_id: str,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Follow a user"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from social_system import follow_user
+        
+        result = follow_user(db, user_id, target_id)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to follow user: {str(e)}")
+
+@api.delete("/users/{target_id}/follow")
+def unfollow_user_endpoint(
+    target_id: str,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Unfollow a user"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from social_system import unfollow_user
+        
+        result = unfollow_user(db, user_id, target_id)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to unfollow user: {str(e)}")
+
+@api.get("/users/{target_id}/followers")
+def get_followers_endpoint(
+    target_id: str,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=50),
+    x_user_id: Optional[str] = Header(None)
+):
+    """Get followers list for a user"""
+    try:
+        db = get_db()
+        from social_system import get_followers
+        
+        result = get_followers(db, target_id, page, limit)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch followers: {str(e)}")
+
+@api.get("/users/{target_id}/following")
+def get_following_endpoint(
+    target_id: str,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=50),
+    x_user_id: Optional[str] = Header(None)
+):
+    """Get following list for a user"""
+    try:
+        db = get_db()
+        from social_system import get_following
+        
+        result = get_following(db, target_id, page, limit)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch following: {str(e)}")
+
+# --- Privacy Settings Endpoints ---
+
+@api.get("/social/privacy")
+def get_privacy_endpoint(x_user_id: Optional[str] = Header(None)):
+    """Get current user's privacy settings"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from social_system import get_privacy_settings
+        
+        return get_privacy_settings(db, user_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch privacy settings: {str(e)}")
+
+@api.patch("/social/privacy")
+def update_privacy_endpoint(
+    payload: PrivacySettingsPayload,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Update user's privacy settings"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from social_system import update_privacy_settings
+        
+        settings = payload.dict(exclude_unset=True)
+        result = update_privacy_settings(db, user_id, settings)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update privacy settings: {str(e)}")
+
 app.include_router(api)
+
 
 # ======================== WEB/DEEP LINK ROUTES ========================
 from fastapi.responses import JSONResponse, HTMLResponse
