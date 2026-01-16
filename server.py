@@ -937,7 +937,140 @@ def update_privacy_endpoint(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update privacy settings: {str(e)}")
 
+# ======================== TASK SHARING ROUTES ========================
+
+class TaskSharePayload(BaseModel):
+    recipientId: str
+    title: str
+    details: str = ""
+    category: str = "Other"
+    points: int = 10
+    estimatedImpact: Optional[str] = None
+
+@api.post("/shares")
+def create_share(
+    payload: TaskSharePayload,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Send a task to a friend"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from task_sharing import create_task_share
+        
+        task_data = {
+            "title": payload.title,
+            "details": payload.details,
+            "category": payload.category,
+            "points": payload.points,
+            "estimatedImpact": payload.estimatedImpact
+        }
+        
+        result = create_task_share(db, user_id, payload.recipientId, task_data)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to share task: {str(e)}")
+
+@api.get("/shares/incoming")
+def get_incoming(
+    status: Optional[str] = Query("pending"),
+    x_user_id: Optional[str] = Header(None)
+):
+    """Get incoming task shares"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from task_sharing import get_incoming_shares
+        
+        shares = get_incoming_shares(db, user_id, status)
+        return {"shares": shares, "count": len(shares)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch shares: {str(e)}")
+
+@api.get("/shares/sent")
+def get_sent(x_user_id: Optional[str] = Header(None)):
+    """Get sent task shares"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from task_sharing import get_sent_shares
+        
+        shares = get_sent_shares(db, user_id)
+        return {"shares": shares, "count": len(shares)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch shares: {str(e)}")
+
+@api.get("/shares/pending-count")
+def get_pending(x_user_id: Optional[str] = Header(None)):
+    """Get count of pending incoming shares"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from task_sharing import get_pending_count
+        
+        count = get_pending_count(db, user_id)
+        return {"count": count}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch count: {str(e)}")
+
+@api.patch("/shares/{share_id}/accept")
+def accept_share_endpoint(
+    share_id: str,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Accept a shared task"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from task_sharing import accept_share
+        
+        result = accept_share(db, share_id, user_id)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to accept share: {str(e)}")
+
+@api.patch("/shares/{share_id}/reject")
+def reject_share_endpoint(
+    share_id: str,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Reject a shared task"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from task_sharing import reject_share
+        
+        result = reject_share(db, share_id, user_id)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reject share: {str(e)}")
+
 app.include_router(api)
+
 
 
 # ======================== WEB/DEEP LINK ROUTES ========================
