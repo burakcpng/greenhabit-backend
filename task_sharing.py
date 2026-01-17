@@ -43,7 +43,8 @@ def create_task_share(
     
     result = db.task_shares.insert_one(share_doc)
     share_doc["id"] = str(result.inserted_id)
-    del share_doc["_id"] if "_id" in share_doc else None
+    if "_id" in share_doc:
+        del share_doc["_id"]
     
     return {
         "success": True,
