@@ -670,18 +670,34 @@ def get_tasks_for_export(db, user_id: str, year: int, month: int) -> List[Dict]:
     start_date = f"{year:04d}-{month:02d}-01"
     end_date = f"{year:04d}-{month:02d}-{last_day:02d}"
     
+    print(f"🔍 Export query: user={user_id}, date range={start_date} to {end_date}")
+    
     try:
-        tasks = list(db.tasks.find({
+        # First, let's check what tasks exist for this user
+        all_user_tasks = list(db.tasks.find({"userId": user_id}).limit(5))
+        print(f"📋 Sample tasks for user (first 5): {len(all_user_tasks)}")
+        for t in all_user_tasks:
+            print(f"   - date={t.get('date')}, isCompleted={t.get('isCompleted')}, title={t.get('title', '')[:30]}")
+        
+        # Query completed tasks in date range
+        query = {
             "userId": user_id,
             "date": {"$gte": start_date, "$lte": end_date},
             "isCompleted": True
-        }).sort("date", 1))
+        }
+        print(f"🔎 Query: {query}")
+        
+        tasks = list(db.tasks.find(query).sort("date", 1))
+        print(f"✅ Found {len(tasks)} completed tasks for export")
         
         # Sanitize for JSON
         result = []
         for task in tasks:
+            # Use the id field (UUID) if present, otherwise fall back to _id
+            task_id = task.get("id") or str(task.get("_id", ""))
+            
             result.append({
-                "id": str(task.get("_id", "")),
+                "id": task_id,
                 "title": task.get("title", ""),
                 "details": task.get("details", ""),
                 "category": task.get("category", ""),
@@ -695,6 +711,8 @@ def get_tasks_for_export(db, user_id: str, year: int, month: int) -> List[Dict]:
         return result
     except Exception as e:
         print(f"❌ Export tasks error: {e}")
+        import traceback
+        traceback.print_exc()
         return []
 
 
