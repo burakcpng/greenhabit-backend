@@ -1069,6 +1069,130 @@ def reject_share_endpoint(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to reject share: {str(e)}")
 
+
+# ======================== USER SEARCH ROUTES ========================
+
+@api.get("/users/search")
+def search_users_endpoint(
+    query: str = Query(..., min_length=2, max_length=100),
+    limit: int = Query(20, ge=1, le=50),
+    x_user_id: Optional[str] = Header(None)
+):
+    """Search for users by display name"""
+    try:
+        db = get_db()
+        user_id = None
+        try:
+            user_id = get_user_id(x_user_id)
+        except:
+            pass
+        
+        from social_system import search_users
+        
+        users = search_users(db, query, limit, user_id)
+        return {"users": users, "count": len(users)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to search users: {str(e)}")
+
+
+# ======================== CALENDAR DATA ROUTES ========================
+
+@api.get("/calendar/{year}/{month}")
+def get_calendar_endpoint(
+    year: int,
+    month: int,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Get daily task completion data for a specific month"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        
+        if month < 1 or month > 12:
+            raise HTTPException(status_code=400, detail="Invalid month")
+        if year < 2020 or year > 2100:
+            raise HTTPException(status_code=400, detail="Invalid year")
+        
+        from social_system import get_calendar_data
+        
+        calendar_data = get_calendar_data(db, user_id, year, month)
+        return calendar_data
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get calendar data: {str(e)}")
+
+
+# ======================== EXPORT DATA ROUTES ========================
+
+class BulkDeletePayload(BaseModel):
+    taskIds: List[str]
+
+@api.get("/tasks/export")
+def export_tasks_endpoint(
+    year: int = Query(...),
+    month: int = Query(...),
+    x_user_id: Optional[str] = Header(None)
+):
+    """Get all completed tasks for export (PDF generation)"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        
+        if month < 1 or month > 12:
+            raise HTTPException(status_code=400, detail="Invalid month")
+        if year < 2020 or year > 2100:
+            raise HTTPException(status_code=400, detail="Invalid year")
+        
+        from social_system import get_tasks_for_export
+        
+        tasks = get_tasks_for_export(db, user_id, year, month)
+        
+        # Calculate summary
+        total_points = sum(t.get("points", 0) for t in tasks)
+        co2_saved = round(len(tasks) * 0.3, 2)
+        
+        return {
+            "tasks": tasks,
+            "count": len(tasks),
+            "year": year,
+            "month": month,
+            "totalPoints": total_points,
+            "co2Saved": co2_saved
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to export tasks: {str(e)}")
+
+
+@api.delete("/tasks/bulk-delete")
+def bulk_delete_tasks_endpoint(
+    payload: BulkDeletePayload,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Delete multiple tasks after export confirmation"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        
+        if not payload.taskIds:
+            raise HTTPException(status_code=400, detail="No task IDs provided")
+        
+        from social_system import bulk_delete_tasks
+        
+        result = bulk_delete_tasks(db, user_id, payload.taskIds)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete tasks: {str(e)}")
+
+
 app.include_router(api)
 
 

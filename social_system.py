@@ -528,7 +528,208 @@ def ensure_social_indexes(db):
     # User privacy index
     db.user_privacy.create_index([("userId", 1)], unique=True)
     
-    # User profiles index for ranking
+    # User profiles index for ranking and search
     db.user_profiles.create_index([("totalPoints", -1)])
+    db.user_profiles.create_index([("displayName", 1)])
     
     print("✅ Social indexes created")
+
+
+# ======================== USER SEARCH ========================
+
+def search_users(db, query: str, limit: int = 20, exclude_user_id: Optional[str] = None) -> List[Dict]:
+    """
+    Search for users by display name
+    Returns list of matching users with basic profile info
+    """
+    if not query or len(query) < 2:
+        return []
+    
+    # Build match filter
+    match_filter = {
+        "displayName": {"$regex": query, "$options": "i"}
+    }
+    
+    # Exclude current user if provided
+    if exclude_user_id:
+        match_filter["userId"] = {"$ne": exclude_user_id}
+    
+    try:
+        cursor = db.user_profiles.find(
+            match_filter,
+            {"userId": 1, "displayName": 1, "level": 1, "currentStreak": 1, "totalPoints": 1}
+        ).limit(limit)
+        
+        users = []
+        for doc in cursor:
+            user_id = doc.get("userId")
+            
+            # Calculate streak if not cached
+            from rewards_system import calculate_streak
+            streak_info = calculate_streak(db, user_id)
+            eco_score = calculate_eco_score(db, user_id)
+            level = max(1, eco_score // 100 + 1)
+            
+            users.append({
+                "userId": user_id,
+                "displayName": doc.get("displayName"),
+                "level": level,
+                "streak": streak_info["currentStreak"],
+                "points": eco_score
+            })
+        
+        return users
+    except Exception as e:
+        print(f"❌ User search error: {e}")
+        return []
+
+
+def get_calendar_data(db, user_id: str, year: int, month: int) -> Dict:
+    """
+    Get daily task completion data for a specific month
+    Returns completion counts for each day
+    """
+    import calendar
+    
+    # Get first and last day of month
+    _, last_day = calendar.monthrange(year, month)
+    start_date = f"{year:04d}-{month:02d}-01"
+    end_date = f"{year:04d}-{month:02d}-{last_day:02d}"
+    
+    # Aggregate tasks by date
+    pipeline = [
+        {
+            "$match": {
+                "userId": user_id,
+                "date": {"$gte": start_date, "$lte": end_date}
+            }
+        },
+        {
+            "$group": {
+                "_id": "$date",
+                "totalCount": {"$sum": 1},
+                "completedCount": {
+                    "$sum": {"$cond": ["$isCompleted", 1, 0]}
+                }
+            }
+        },
+        {"$sort": {"_id": 1}}
+    ]
+    
+    try:
+        results = list(db.tasks.aggregate(pipeline))
+        
+        days = []
+        total_completed = 0
+        total_tasks = 0
+        
+        for doc in results:
+            completed = doc.get("completedCount", 0)
+            total = doc.get("totalCount", 0)
+            
+            days.append({
+                "date": doc["_id"],
+                "completedCount": completed,
+                "totalCount": total
+            })
+            
+            total_completed += completed
+            total_tasks += total
+        
+        # Check if all tasks are completed for the month
+        all_completed = total_tasks > 0 and total_completed == total_tasks
+        
+        return {
+            "year": year,
+            "month": month,
+            "days": days,
+            "totalCompleted": total_completed,
+            "totalTasks": total_tasks,
+            "allTasksCompleted": all_completed
+        }
+    except Exception as e:
+        print(f"❌ Calendar data error: {e}")
+        return {
+            "year": year,
+            "month": month,
+            "days": [],
+            "totalCompleted": 0,
+            "totalTasks": 0,
+            "allTasksCompleted": False
+        }
+
+
+def get_tasks_for_export(db, user_id: str, year: int, month: int) -> List[Dict]:
+    """
+    Get all completed tasks for a specific month for export
+    Returns full task details including evidence paths
+    """
+    import calendar
+    
+    _, last_day = calendar.monthrange(year, month)
+    start_date = f"{year:04d}-{month:02d}-01"
+    end_date = f"{year:04d}-{month:02d}-{last_day:02d}"
+    
+    try:
+        tasks = list(db.tasks.find({
+            "userId": user_id,
+            "date": {"$gte": start_date, "$lte": end_date},
+            "isCompleted": True
+        }).sort("date", 1))
+        
+        # Sanitize for JSON
+        result = []
+        for task in tasks:
+            result.append({
+                "id": str(task.get("_id", "")),
+                "title": task.get("title", ""),
+                "details": task.get("details", ""),
+                "category": task.get("category", ""),
+                "date": task.get("date", ""),
+                "points": task.get("points", 0),
+                "estimatedImpact": task.get("estimatedImpact", ""),
+                "evidenceImagePath": task.get("evidenceImagePath"),
+                "completedAt": task.get("completedAt").isoformat() if task.get("completedAt") else None
+            })
+        
+        return result
+    except Exception as e:
+        print(f"❌ Export tasks error: {e}")
+        return []
+
+
+def bulk_delete_tasks(db, user_id: str, task_ids: List[str]) -> Dict:
+    """
+    Delete multiple tasks by ID (after export confirmation)
+    Only deletes tasks belonging to the user
+    """
+    from bson import ObjectId
+    
+    try:
+        # Convert to ObjectId where possible
+        object_ids = []
+        for tid in task_ids:
+            try:
+                object_ids.append(ObjectId(tid))
+            except:
+                pass
+        
+        # Delete only user's tasks
+        result = db.tasks.delete_many({
+            "_id": {"$in": object_ids},
+            "userId": user_id
+        })
+        
+        return {
+            "success": True,
+            "deletedCount": result.deleted_count,
+            "message": f"Deleted {result.deleted_count} tasks"
+        }
+    except Exception as e:
+        print(f"❌ Bulk delete error: {e}")
+        return {
+            "success": False,
+            "deletedCount": 0,
+            "message": str(e)
+        }
+
