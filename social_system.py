@@ -72,12 +72,26 @@ def get_social_profile(db, user_id: str, viewer_id: Optional[str] = None) -> Dic
     
     # Get unlocked achievements with details
     unlocked_ids = set(profile.get("unlockedAchievements", []))
-    achievements = []
-    for ach_id, ach in ACHIEVEMENTS.items():
-        achievements.append({
-            **ach,
-            "unlocked": ach_id in unlocked_ids
-        })
+    
+    # For own profile: show ALL achievements with unlock status (progress tracking)
+    # For viewing other users: show ONLY earned achievements (hall of fame)
+    if viewer_id == user_id or viewer_id is None:
+        # Own profile - show all for progress tracking
+        achievements = []
+        for ach_id, ach in ACHIEVEMENTS.items():
+            achievements.append({
+                **ach,
+                "unlocked": ach_id in unlocked_ids
+            })
+    else:
+        # Friend's profile - only show earned achievements
+        achievements = []
+        for ach_id, ach in ACHIEVEMENTS.items():
+            if ach_id in unlocked_ids:
+                achievements.append({
+                    **ach,
+                    "unlocked": True  # Always true for earned
+                })
     
     # Calculate level (100 points per level)
     level = max(1, eco_score // 100 + 1)
