@@ -111,6 +111,7 @@ class CreateTaskPayload(BaseModel):
     points: int = Field(..., ge=0, le=1000)
     estimatedImpact: str = Field(..., max_length=200)
     date: Optional[str] = None
+    evidenceImagePath: Optional[str] = None  # ✅ FIX: Photo proof persistence
 
 class UpdateTaskPayload(BaseModel):
     isCompleted: Optional[bool] = None
@@ -118,6 +119,8 @@ class UpdateTaskPayload(BaseModel):
     details: Optional[str] = Field(None, max_length=1000)
     category: Optional[str] = None
     points: Optional[int] = Field(None, ge=0, le=1000)
+    estimatedImpact: Optional[str] = None
+    evidenceImagePath: Optional[str] = None  # ✅ FIX: Photo proof persistence
 
 # ======================== ROOT ENDPOINTS ========================
 
@@ -182,6 +185,7 @@ def create_task(
             "date": task_date,
             "points": payload.points,
             "estimatedImpact": payload.estimatedImpact,
+            "evidenceImagePath": payload.evidenceImagePath,  # ✅ FIX: Save photo proof path
             "isCompleted": False,
             "completedAt": None,
             "createdAt": datetime.utcnow(),
