@@ -165,7 +165,8 @@ def get_team_members(db, team_id: str) -> List[Dict]:
             "role": m["role"],
             "joinedAt": m["joinedAt"].isoformat() + "Z" if m.get("joinedAt") else None,
             "totalPoints": user_stats.get("totalPoints", 0),
-            "tasksCompleted": user_stats.get("tasksCompleted", 0)
+            "tasksCompleted": user_stats.get("tasksCompleted", 0),
+            "level": user_stats.get("level", 1)  # ✅ ADDED: Level needed for UI
         }
         members.append(member)
     
@@ -268,12 +269,16 @@ def get_pending_invitations(db, user_id: str) -> List[Dict]:
     
     result = []
     for inv in invitations:
+        # ✅ FIX: Fetch latest inviter profile
+        inviter_profile = db.user_profiles.find_one({"userId": inv["inviterId"]})
+        inviter_name = inviter_profile.get("displayName", "GreenHabit User") if inviter_profile else "GreenHabit User"
+        
         result.append({
             "id": inv["id"],
             "teamId": inv["teamId"],
             "teamName": inv["teamName"],
             "inviterId": inv["inviterId"],
-            "inviterName": inv["inviterName"],
+            "inviterName": inviter_name, # ✅ Use live data
             "status": inv["status"],
             "createdAt": inv["createdAt"].isoformat() + "Z" if inv.get("createdAt") else None
         })
@@ -289,16 +294,16 @@ def get_sent_invitations(db, user_id: str) -> List[Dict]:
     
     result = []
     for inv in invitations:
-        # Get invitee display name from user_profiles
-        invitee = db.user_profiles.find_one({"userId": inv["inviteeId"]})
-        invitee_name = invitee.get("displayName") if invitee else None
+        # ✅ FIX: Fetch latest invitee profile to avoid "Unknown User"
+        invitee_profile = db.user_profiles.find_one({"userId": inv["inviteeId"]})
+        invitee_name = invitee_profile.get("displayName") if invitee_profile else None
         
         result.append({
             "id": inv["id"],
             "teamId": inv["teamId"],
             "teamName": inv["teamName"],
             "inviteeId": inv["inviteeId"],
-            "inviteeName": invitee_name or "Unknown User",
+            "inviteeName": invitee_name or "Unknown User", # ✅ Display live name
             "status": inv["status"],
             "createdAt": inv["createdAt"].isoformat() + "Z" if inv.get("createdAt") else None
         })

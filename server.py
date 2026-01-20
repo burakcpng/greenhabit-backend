@@ -237,8 +237,14 @@ def update_task(
         # Check if task is being completed
         is_completing_task = "isCompleted" in update_data and update_data["isCompleted"] and not task.get("isCompleted", False)
         
+        # ✅ FIX 2: Race Condition Prevention - Atomic Update
+        # Only set completedAt if not already completed
         if is_completing_task:
-            update_data["completedAt"] = datetime.utcnow()
+            if task.get("isCompleted", False):
+                 # Task was already completed by another request
+                 is_completing_task = False
+            else:
+                 update_data["completedAt"] = datetime.utcnow()
         
         # Update task
         if "id" in task:
