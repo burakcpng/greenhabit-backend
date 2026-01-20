@@ -232,6 +232,11 @@ def invite_to_team(db, team_id: str, inviter_id: str, invitee_id: str) -> Dict:
     inviter_profile = db.user_profiles.find_one({"userId": inviter_id})
     inviter_name = inviter_profile.get("displayName", "GreenHabit User") if inviter_profile else "GreenHabit User"
     
+    # Validate invitee exists
+    invitee_profile = db.user_profiles.find_one({"userId": invitee_id})
+    if not invitee_profile:
+        return {"success": False, "message": "User not found to invite"}
+    
     invitation_id = str(uuid.uuid4())
     invitation_doc = {
         "id": invitation_id,

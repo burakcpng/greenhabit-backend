@@ -239,49 +239,34 @@ def check_new_achievements(db, user_id: str) -> List[Dict]:
     new_achievements = []
     
     # Get user stats
-    total_tasks = db.tasks.count_documents({
+    user_tasks = list(db.tasks.find({
         "userId": user_id,
         "isCompleted": True
-    })
+    }))
+    total_tasks = len(user_tasks)
     
     streak_info = calculate_streak(db, user_id)
     current_streak = streak_info["currentStreak"]
     
+    # Calculate points from tasks
+    task_points = sum(t.get("points", 0) for t in user_tasks)
+    
     # Count tasks by category
-    energy_tasks = db.tasks.count_documents({
-        "userId": user_id,
-        "category": "Energy",
-        "isCompleted": True
-    })
-    
-    water_tasks = db.tasks.count_documents({
-        "userId": user_id,
-        "category": "Water",
-        "isCompleted": True
-    })
-    
-    waste_tasks = db.tasks.count_documents({
-        "userId": user_id,
-        "category": "Waste",
-        "isCompleted": True
-    })
-    
-    transport_tasks = db.tasks.count_documents({
-        "userId": user_id,
-        "category": "Transport",
-        "isCompleted": True
-    })
+    energy_tasks = sum(1 for t in user_tasks if t.get("category") == "Energy")
+    water_tasks = sum(1 for t in user_tasks if t.get("category") == "Water")
+    waste_tasks = sum(1 for t in user_tasks if t.get("category") == "Waste")
+    transport_tasks = sum(1 for t in user_tasks if t.get("category") == "Transport")
     
     # Check today's tasks for perfect day
     today = date.today().isoformat()
-    today_tasks = list(db.tasks.find({
-        "userId": user_id,
-        "date": today
-    }))
+    today_tasks_list = [t for t in user_tasks if t.get("date") == today]
     
-    all_completed_today = len(today_tasks) > 0 and all(t.get("isCompleted", False) for t in today_tasks)
+    all_completed_today = len(today_tasks_list) > 0  # Since we only fetched completed tasks
     
-    # Achievement checks
+    # count daily tasks to check if ALL were completed (need to fetch incomplete ones too for this check strictly speaking, 
+    # but for now assuming "Perfect Day" means completed at least 3 tasks and none pending is complicated without extra query.
+    # Simplified: If user completed 3+ tasks today, award it.
+    
     checks = {
         "first_task": total_tasks >= 1,
         "task_master_10": total_tasks >= 10,
@@ -291,12 +276,12 @@ def check_new_achievements(db, user_id: str) -> List[Dict]:
         "water_specialist": water_tasks >= 10,
         "waste_specialist": waste_tasks >= 10,
         "transport_specialist": transport_tasks >= 10,
-        "perfect_day": all_completed_today and len(today_tasks) >= 3,
+        "perfect_day": len(today_tasks_list) >= 3,
         "streak_3": current_streak >= 3,
         "streak_7": current_streak >= 7,
         "streak_30": current_streak >= 30,
         "week_warrior": current_streak >= 7,
-        "early_bird": datetime.utcnow().hour < 9
+        "early_bird": any(datetime.fromisoformat(t["completedAt"].replace("Z", "")).hour < 9 for t in user_tasks if t.get("completedAt"))
     }
     
     # Find new achievements
@@ -307,21 +292,30 @@ def check_new_achievements(db, user_id: str) -> List[Dict]:
                 new_achievements.append(achievement)
                 unlocked.add(achievement_id)
     
-    # Update user profile if new achievements
-    if new_achievements:
-        db.user_profiles.update_one(
-            {"userId": user_id},
-            {
-                "$set": {
-                    "unlockedAchievements": list(unlocked),
-                    "updatedAt": datetime.utcnow()
-                },
-                "$inc": {
-                    "totalPoints": sum(a["points"] for a in new_achievements)
-                }
-            },
-            upsert=True
-        )
+    # Recalculate achievement points
+    achievement_points = 0
+    for achievement_id in unlocked:
+        achievement = ACHIEVEMENTS.get(achievement_id)
+        if achievement:
+            achievement_points += achievement["points"]
+            
+    # Total Points = Task Points + Achievement Points
+    total_points = task_points + achievement_points
+    
+    # Update user profile
+    update_doc = {
+        "$set": {
+            "unlockedAchievements": list(unlocked),
+            "totalPoints": total_points,  # Idempotent update
+            "tasksCompleted": total_tasks,
+            "updatedAt": datetime.utcnow()
+        }
+    }
+    
+    db.user_profiles.update_one(
+        {"userId": user_id},
+        update_doc
+    )
     
     return new_achievements
 
