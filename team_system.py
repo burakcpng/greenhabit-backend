@@ -276,6 +276,31 @@ def get_pending_invitations(db, user_id: str) -> List[Dict]:
     return result
 
 
+def get_sent_invitations(db, user_id: str) -> List[Dict]:
+    """Get team invitations sent by this user (outgoing)"""
+    invitations = list(db.team_invitations.find({
+        "inviterId": user_id
+    }).sort("createdAt", -1))
+    
+    result = []
+    for inv in invitations:
+        # Get invitee display name
+        invitee = db.users.find_one({"userId": inv["inviteeId"]})
+        invitee_name = invitee.get("display_name") if invitee else None
+        
+        result.append({
+            "id": inv["id"],
+            "teamId": inv["teamId"],
+            "teamName": inv["teamName"],
+            "inviteeId": inv["inviteeId"],
+            "inviteeName": invitee_name or "Unknown User",
+            "status": inv["status"],
+            "createdAt": inv["createdAt"].isoformat() + "Z" if inv.get("createdAt") else None
+        })
+    
+    return result
+
+
 def accept_invitation(db, invitation_id: str, user_id: str) -> Dict:
     """Accept team invitation"""
     invitation = db.team_invitations.find_one({"id": invitation_id})

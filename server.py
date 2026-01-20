@@ -1277,6 +1277,21 @@ def get_pending_invitations_endpoint(x_user_id: Optional[str] = Header(None)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get invitations: {str(e)}")
 
+@api.get("/teams/invitations/sent")
+def get_sent_invitations_endpoint(x_user_id: Optional[str] = Header(None)):
+    """Get team invitations sent by current user (outgoing)"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from team_system import get_sent_invitations
+        
+        invitations = get_sent_invitations(db, user_id)
+        return {"invitations": invitations, "count": len(invitations)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get sent invitations: {str(e)}")
+
 @api.patch("/teams/invitations/{invitation_id}/accept")
 def accept_invitation_endpoint(
     invitation_id: str,
