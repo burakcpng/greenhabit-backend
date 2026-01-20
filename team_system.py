@@ -284,9 +284,9 @@ def get_sent_invitations(db, user_id: str) -> List[Dict]:
     
     result = []
     for inv in invitations:
-        # Get invitee display name
-        invitee = db.users.find_one({"userId": inv["inviteeId"]})
-        invitee_name = invitee.get("display_name") if invitee else None
+        # Get invitee display name from user_profiles
+        invitee = db.user_profiles.find_one({"userId": inv["inviteeId"]})
+        invitee_name = invitee.get("displayName") if invitee else None
         
         result.append({
             "id": inv["id"],
