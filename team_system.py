@@ -263,7 +263,20 @@ def invite_to_team(db, team_id: str, inviter_id: str, invitee_id: str) -> Dict:
 
 def get_pending_invitations(db, user_id: str) -> List[Dict]:
     """Get pending team invitations for a user"""
-    print(f"🔍 DEBUG: Fetching invitations for user_id='{user_id}'") # ✅ DEBUG LOG
+    print(f"🔍 DEBUG: Fetching invitations for user_id='{user_id}' (len={len(user_id)})")
+    
+    # DUMP ALL PENDING INVITATIONS FOR DEBUGGING
+    all_pending = list(db.team_invitations.find({"status": "pending"}))
+    print(f"📊 DEBUG: Total pending invitations in DB: {len(all_pending)}")
+    for p in all_pending:
+        p_invitee = p.get('inviteeId', 'UNKNOWN')
+        print(f"   - Invitee: '{p_invitee}' (len={len(p_invitee)}) | Team: {p.get('teamName')}")
+        if p_invitee == user_id:
+            print("     MATCH FOUND! ✅")
+        else:
+            print("     NO MATCH ❌")
+
+
     invitations = list(db.team_invitations.find({
         "inviteeId": user_id,
         "status": "pending"
