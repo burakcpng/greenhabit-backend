@@ -546,6 +546,10 @@ def startup_event():
         # Create social indexes
         from social_system import ensure_social_indexes
         ensure_social_indexes(db)
+        
+        # Create team indexes
+        from team_system import ensure_team_indexes
+        ensure_team_indexes(db)
     except Exception as e:
         print(f"❌ Database connection failed: {e}")
 
@@ -1072,6 +1076,380 @@ def reject_share_endpoint(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to reject share: {str(e)}")
+
+
+# ======================== TEAM ROUTES ========================
+
+class CreateTeamPayload(BaseModel):
+    name: str = Field(..., min_length=2, max_length=50)
+    invitedUserIds: Optional[List[str]] = None
+
+class InviteToTeamPayload(BaseModel):
+    userId: str
+
+class ShareTaskToTeamPayload(BaseModel):
+    title: str
+    details: str = ""
+    category: str = "Other"
+    points: int = 10
+    estimatedImpact: Optional[str] = None
+
+# --- Team CRUD ---
+
+@api.post("/teams")
+def create_team_endpoint(
+    payload: CreateTeamPayload,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Create a new team"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from team_system import create_team
+        
+        result = create_team(db, user_id, payload.name, payload.invitedUserIds)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create team: {str(e)}")
+
+@api.get("/teams/my")
+def get_my_team_endpoint(x_user_id: Optional[str] = Header(None)):
+    """Get current user's team"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from team_system import get_my_team, get_team_members
+        
+        team = get_my_team(db, user_id)
+        if not team:
+            return {"team": None}
+        
+        # Include members
+        members = get_team_members(db, team["id"])
+        team["members"] = members
+        
+        return {"team": team}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get team: {str(e)}")
+
+@api.get("/teams/{team_id}")
+def get_team_endpoint(
+    team_id: str,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Get team by ID"""
+    try:
+        db = get_db()
+        get_user_id(x_user_id)  # Validate user
+        from team_system import get_team, get_team_members
+        
+        team = get_team(db, team_id)
+        if not team:
+            raise HTTPException(status_code=404, detail="Team not found")
+        
+        # Include members
+        members = get_team_members(db, team_id)
+        team["members"] = members
+        
+        return team
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get team: {str(e)}")
+
+@api.delete("/teams/{team_id}")
+def delete_team_endpoint(
+    team_id: str,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Delete team (creator only)"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from team_system import delete_team
+        
+        result = delete_team(db, team_id, user_id)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete team: {str(e)}")
+
+@api.post("/teams/{team_id}/leave")
+def leave_team_endpoint(
+    team_id: str,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Leave team (members only)"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from team_system import leave_team
+        
+        result = leave_team(db, team_id, user_id)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to leave team: {str(e)}")
+
+# --- Team Member Management ---
+
+@api.delete("/teams/{team_id}/members/{target_user_id}")
+def remove_member_endpoint(
+    team_id: str,
+    target_user_id: str,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Remove member from team (creator only)"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from team_system import remove_member
+        
+        result = remove_member(db, team_id, user_id, target_user_id)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to remove member: {str(e)}")
+
+# --- Team Invitations ---
+
+@api.post("/teams/{team_id}/invite")
+def invite_to_team_endpoint(
+    team_id: str,
+    payload: InviteToTeamPayload,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Invite user to team (creator only)"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from team_system import invite_to_team
+        
+        result = invite_to_team(db, team_id, user_id, payload.userId)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to invite user: {str(e)}")
+
+@api.get("/teams/invitations/incoming")
+def get_pending_invitations_endpoint(x_user_id: Optional[str] = Header(None)):
+    """Get pending team invitations for current user"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from team_system import get_pending_invitations
+        
+        invitations = get_pending_invitations(db, user_id)
+        return {"invitations": invitations, "count": len(invitations)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get invitations: {str(e)}")
+
+@api.patch("/teams/invitations/{invitation_id}/accept")
+def accept_invitation_endpoint(
+    invitation_id: str,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Accept team invitation"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from team_system import accept_invitation
+        
+        result = accept_invitation(db, invitation_id, user_id)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to accept invitation: {str(e)}")
+
+@api.patch("/teams/invitations/{invitation_id}/reject")
+def reject_invitation_endpoint(
+    invitation_id: str,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Reject team invitation"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from team_system import reject_invitation
+        
+        result = reject_invitation(db, invitation_id, user_id)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reject invitation: {str(e)}")
+
+# --- Team Task Sharing ---
+
+@api.post("/teams/{team_id}/share-task")
+def share_task_to_team_endpoint(
+    team_id: str,
+    payload: ShareTaskToTeamPayload,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Share task to all team members (creator only)"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from team_system import share_task_to_team
+        
+        task_data = {
+            "title": payload.title,
+            "details": payload.details,
+            "category": payload.category,
+            "points": payload.points,
+            "estimatedImpact": payload.estimatedImpact
+        }
+        
+        result = share_task_to_team(db, team_id, user_id, task_data)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to share task: {str(e)}")
+
+@api.get("/teams/tasks/incoming")
+def get_pending_team_tasks_endpoint(x_user_id: Optional[str] = Header(None)):
+    """Get pending team task shares for current user"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from team_system import get_pending_team_tasks
+        
+        tasks = get_pending_team_tasks(db, user_id)
+        return {"tasks": tasks, "count": len(tasks)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get team tasks: {str(e)}")
+
+@api.patch("/teams/tasks/{share_id}/accept")
+def accept_team_task_endpoint(
+    share_id: str,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Accept team task share"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from team_system import accept_team_task
+        
+        result = accept_team_task(db, share_id, user_id)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to accept task: {str(e)}")
+
+@api.patch("/teams/tasks/{share_id}/reject")
+def reject_team_task_endpoint(
+    share_id: str,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Reject team task share"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from team_system import reject_team_task
+        
+        result = reject_team_task(db, share_id, user_id)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reject task: {str(e)}")
+
+# --- Team Stats & Leaderboard ---
+
+@api.get("/teams/{team_id}/stats")
+def get_team_stats_endpoint(
+    team_id: str,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Get team statistics"""
+    try:
+        db = get_db()
+        get_user_id(x_user_id)  # Validate user
+        from team_system import get_team_stats
+        
+        stats = get_team_stats(db, team_id)
+        if not stats:
+            raise HTTPException(status_code=404, detail="Team not found")
+        
+        return stats
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get stats: {str(e)}")
+
+@api.get("/teams/{team_id}/leaderboard")
+def get_team_leaderboard_endpoint(
+    team_id: str,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Get team leaderboard"""
+    try:
+        db = get_db()
+        get_user_id(x_user_id)  # Validate user
+        from team_system import get_team_leaderboard
+        
+        leaderboard = get_team_leaderboard(db, team_id)
+        return {"leaderboard": leaderboard, "count": len(leaderboard)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get leaderboard: {str(e)}")
 
 
 # ======================== USER SEARCH ROUTES ========================
