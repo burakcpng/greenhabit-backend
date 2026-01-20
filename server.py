@@ -1105,14 +1105,17 @@ def create_team_endpoint(
     try:
         db = get_db()
         user_id = get_user_id(x_user_id)
-        from team_system import create_team
+        from team_system import create_team, get_my_team, get_team_members
         
         result = create_team(db, user_id, payload.name, payload.invitedUserIds)
         
         if not result["success"]:
             raise HTTPException(status_code=400, detail=result["message"])
         
-        return result
+        # Return full team response for iOS decoding (TeamResponse expects {team, members})
+        team = get_my_team(db, user_id)
+        members = get_team_members(db, result["teamId"]) if result.get("teamId") else []
+        return {"team": team, "members": members}
     except HTTPException:
         raise
     except Exception as e:
