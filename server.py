@@ -100,7 +100,7 @@ def get_user_id(x_user_id: Optional[str] = Header(None)) -> str:
             status_code=401,
             detail="User ID required. Please provide X-User-Id header."
         )
-    return x_user_id
+    return x_user_id.strip()
 
 # ======================== MODELS ========================
 

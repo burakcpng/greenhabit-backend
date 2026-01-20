@@ -208,6 +208,7 @@ def remove_member(db, team_id: str, creator_id: str, target_user_id: str) -> Dic
 
 def invite_to_team(db, team_id: str, inviter_id: str, invitee_id: str) -> Dict:
     """Send team invitation"""
+    invitee_id = invitee_id.strip()  # ✅ FIX: Sanitize input
     team = db.teams.find_one({"id": team_id})
     if not team:
         return {"success": False, "message": "Team not found"}
@@ -262,6 +263,7 @@ def invite_to_team(db, team_id: str, inviter_id: str, invitee_id: str) -> Dict:
 
 def get_pending_invitations(db, user_id: str) -> List[Dict]:
     """Get pending team invitations for a user"""
+    print(f"🔍 DEBUG: Fetching invitations for user_id='{user_id}'") # ✅ DEBUG LOG
     invitations = list(db.team_invitations.find({
         "inviteeId": user_id,
         "status": "pending"
