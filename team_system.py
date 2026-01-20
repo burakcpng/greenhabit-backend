@@ -293,6 +293,7 @@ def get_pending_invitations(db, user_id: str) -> List[Dict]:
             "teamId": inv["teamId"],
             "teamName": inv["teamName"],
             "inviterId": inv["inviterId"],
+            "inviteeId": inv["inviteeId"], # ✅ FIX: Required by Swift
             "inviterName": inviter_name, # ✅ Use live data
             "status": inv["status"],
             "createdAt": inv["createdAt"].isoformat() + "Z" if inv.get("createdAt") else None

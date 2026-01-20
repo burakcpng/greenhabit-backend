@@ -179,7 +179,10 @@ def calculate_rewards(db, user_id: str, task: dict) -> Dict:
     Calculate rewards for completing a task
     Returns points breakdown and bonuses
     """
-    base_points = task.get("points", 10)
+    try:
+        base_points = int(task.get("points", 10))
+    except (ValueError, TypeError):
+        base_points = 10
     
     # Get streak info
     streak_info = calculate_streak(db, user_id)
@@ -249,7 +252,12 @@ def check_new_achievements(db, user_id: str) -> List[Dict]:
     current_streak = streak_info["currentStreak"]
     
     # Calculate points from tasks
-    task_points = sum(t.get("points", 0) for t in user_tasks)
+    task_points = 0
+    for t in user_tasks:
+        try:
+            task_points += int(t.get("points", 0))
+        except (ValueError, TypeError):
+            pass
     
     # Count tasks by category
     energy_tasks = sum(1 for t in user_tasks if t.get("category") == "Energy")
