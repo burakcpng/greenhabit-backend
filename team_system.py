@@ -204,6 +204,33 @@ def remove_member(db, team_id: str, creator_id: str, target_user_id: str) -> Dic
     return {"success": True, "message": "Member removed from team"}
 
 
+def update_member_permissions(db, team_id: str, creator_id: str, target_user_id: str, can_share_tasks: bool) -> Dict:
+    """Update member's permissions (creator only)"""
+    team = db.teams.find_one({"id": team_id})
+    if not team:
+        return {"success": False, "message": "Team not found"}
+    
+    if team["creatorId"] != creator_id:
+        return {"success": False, "message": "Only the team creator can update permissions"}
+    
+    if target_user_id == creator_id:
+        return {"success": False, "message": "Cannot modify creator permissions"}
+    
+    membership = db.team_members.find_one({"teamId": team_id, "userId": target_user_id})
+    if not membership:
+        return {"success": False, "message": "User is not a member of this team"}
+    
+    # Update member's canShareTasks permission
+    result = db.team_members.update_one(
+        {"teamId": team_id, "userId": target_user_id},
+        {"$set": {"canShareTasks": can_share_tasks, "updatedAt": datetime.utcnow()}}
+    )
+    
+    if result.modified_count > 0:
+        return {"success": True, "message": "Permissions updated"}
+    return {"success": True, "message": "No changes made"}
+
+
 # ======================== TEAM INVITATIONS ========================
 
 def invite_to_team(db, team_id: str, inviter_id: str, invitee_id: str) -> Dict:

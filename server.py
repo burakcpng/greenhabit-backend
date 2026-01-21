@@ -1242,6 +1242,41 @@ def remove_member_endpoint(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to remove member: {str(e)}")
 
+
+class UpdateMemberPermissionsPayload(BaseModel):
+    canShareTasks: bool = False
+
+
+@api.patch("/teams/{team_id}/members/{target_user_id}/permissions")
+def update_member_permissions_endpoint(
+    team_id: str,
+    target_user_id: str,
+    payload: UpdateMemberPermissionsPayload,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Update member permissions (creator only)"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from team_system import update_member_permissions
+        
+        result = update_member_permissions(
+            db, 
+            team_id, 
+            user_id, 
+            target_user_id, 
+            payload.canShareTasks
+        )
+        
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update permissions: {str(e)}")
+
 # --- Team Invitations ---
 
 @api.post("/teams/{team_id}/invite")
