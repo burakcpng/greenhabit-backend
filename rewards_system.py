@@ -275,6 +275,19 @@ def check_new_achievements(db, user_id: str) -> List[Dict]:
     # but for now assuming "Perfect Day" means completed at least 3 tasks and none pending is complicated without extra query.
     # Simplified: If user completed 3+ tasks today, award it.
     
+    # ✅ ULTRATHINK FIX: Helper to safely extract hour from completedAt
+    def _get_hour(completed_at) -> int:
+        """Safely extract hour from completedAt (datetime or string)"""
+        if completed_at is None:
+            return 12  # Default to noon (no bonus)
+        if isinstance(completed_at, datetime):
+            return completed_at.hour
+        # It's a string
+        try:
+            return datetime.fromisoformat(str(completed_at).replace("Z", "")).hour
+        except:
+            return 12
+    
     checks = {
         "first_task": total_tasks >= 1,
         "task_master_10": total_tasks >= 10,
@@ -289,7 +302,7 @@ def check_new_achievements(db, user_id: str) -> List[Dict]:
         "streak_7": current_streak >= 7,
         "streak_30": current_streak >= 30,
         "week_warrior": current_streak >= 7,
-        "early_bird": any(datetime.fromisoformat(t["completedAt"].replace("Z", "")).hour < 9 for t in user_tasks if t.get("completedAt"))
+        "early_bird": any(_get_hour(t.get("completedAt")) < 9 for t in user_tasks if t.get("completedAt"))
     }
     
     # Find new achievements
