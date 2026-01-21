@@ -1139,11 +1139,10 @@ def get_my_team_endpoint(x_user_id: Optional[str] = Header(None)):
         if not team:
             return {"team": None}
         
-        # Include members
+        # Include members - return at top level to match Swift TeamResponse
         members = get_team_members(db, team["id"])
-        team["members"] = members
         
-        return {"team": team}
+        return {"team": team, "members": members}
     except HTTPException:
         raise
     except Exception as e:
