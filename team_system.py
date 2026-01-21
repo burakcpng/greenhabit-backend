@@ -475,6 +475,20 @@ def share_task_to_team(db, team_id: str, sender_id: str, task_data: Dict) -> Dic
         }
         db.team_task_shares.insert_one(share_doc)
         shares_created += 1
+        
+        # TRIGGER PUSH NOTIFICATION
+        try:
+            from notification_system import send_push_notification
+            import asyncio
+            
+            asyncio.run(send_push_notification(
+                db, 
+                member["userId"], 
+                f"New Team Task from {sender_name}", 
+                f"Task: {task_data.get('title', 'Eco Task')} - Tap to view."
+            ))
+        except Exception as e:
+            print(f"Failed to send push to member: {e}")
     
     return {
         "success": True,

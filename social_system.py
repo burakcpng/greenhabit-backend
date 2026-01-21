@@ -353,6 +353,24 @@ def follow_user(db, follower_id: str, followed_id: str) -> Dict:
         "createdAt": datetime.utcnow()
     })
     
+    # TRIGGER PUSH NOTIFICATION
+    try:
+        from notification_system import send_push_notification
+        import asyncio
+        
+        # Get follower name
+        follower = db.user_profiles.find_one({"userId": follower_id})
+        follower_name = follower.get("displayName", "Someone") if follower else "Someone"
+        
+        asyncio.run(send_push_notification(
+            db, 
+            followed_id, 
+            "New Follower! 👤", 
+            f"{follower_name} started following you."
+        ))
+    except Exception as e:
+        print(f"Failed to send push: {e}")
+    
     # Get updated counts
     follower_count = db.follows.count_documents({"followedId": followed_id})
     following_count = db.follows.count_documents({"followerId": follower_id})

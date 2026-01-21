@@ -1633,6 +1633,30 @@ def bulk_delete_tasks_endpoint(
         raise HTTPException(status_code=500, detail=f"Failed to delete tasks: {str(e)}")
 
 
+# ======================== NOTIFICATION ROUTES ========================
+
+class DeviceTokenPayload(BaseModel):
+    token: str
+    platform: str = "ios"
+
+@api.post("/notifications/register-token")
+def register_token_endpoint(
+    payload: DeviceTokenPayload,
+    x_user_id: Optional[str] = Header(None)
+):
+    """Register device token for push notifications"""
+    try:
+        db = get_db()
+        user_id = get_user_id(x_user_id)
+        from notification_system import register_device_token
+        
+        return register_device_token(db, user_id, payload.token, payload.platform)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to register token: {str(e)}")
+
+
 app.include_router(api)
 
 
