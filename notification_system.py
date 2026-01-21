@@ -9,7 +9,7 @@ from typing import Dict, List, Optional
 
 # --- Configuration ---
 # You need to fill these with actual values from Apple Developer Portal
-TEAM_ID = os.getenv("APNS_TEAM_ID", "YOUR_TEAM_ID")
+TEAM_ID = os.getenv("APNS_TEAM_ID", "")
 KEY_ID = os.getenv("APNS_KEY_ID", "YOUR_KEY_ID")
 BUNDLE_ID = os.getenv("APNS_BUNDLE_ID", "com.burakcpng.GreenHabit")
 # Path to your .p8 file
