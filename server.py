@@ -11,7 +11,9 @@ from bson import ObjectId
 
 # Import external data files
 from task_templates import TASK_POOL
+from task_templates import TASK_POOL
 from learning_content import LEARNING_ARTICLES
+from auth_system import AuthSystem, get_current_user # ✅ NEW Secure Auth
 
 app = FastAPI(
     title="GreenHabit API",
@@ -136,6 +138,97 @@ async def root():
 async def health_check():
     return {"ok": True}
 
+# ======================== AUTH ROUTES (NEW) ========================
+
+class LoginPayload(BaseModel):
+    appleToken: str
+    legacyUuid: Optional[str] = None # For syncing old data
+    fullName: Optional[str] = None # From Apple (only on first login)
+
+@api.post("/auth/login")
+def login_with_apple(payload: LoginPayload):
+    try:
+        db = get_db()
+        
+        # 1. Verify Apple Token
+        apple_user_id = AuthSystem.verify_apple_token(payload.appleToken)
+        current_time = datetime.utcnow()
+        
+        # 2. Check if user exists
+        user = db.users.find_one({"appleUserId": apple_user_id})
+        
+        if not user:
+            # 3. New User or Migration
+            
+            # Check for legacy migration
+            if payload.legacyUuid:
+                # Try to find legacy user by UUID
+                # Note: Legacy users don't have a 'users' collection entry typically, 
+                # they just have tasks/stats with that userId.
+                # But if we want to migrate, we need to associate that old ID with this new Apple ID.
+                
+                # Check if tasks exist for this legacy ID
+                legacy_task_count = db.tasks.count_documents({"userId": payload.legacyUuid})
+                
+                if legacy_task_count > 0:
+                    print(f"🔄 Migrating user {payload.legacyUuid} to Apple ID {apple_user_id}")
+                    # MIGRATION STRATEGY:
+                    # We will treat the 'apple_user_id' as the NEW canonical ID.
+                    # We need to update all old documents to point to the new ID.
+                    # This is heavy but safer than keeping the insecure UUID.
+                    
+                    # Update Tasks
+                    db.tasks.update_many(
+                        {"userId": payload.legacyUuid},
+                        {"$set": {"userId": apple_user_id}}
+                    )
+                    
+                    # Update Preferences
+                    db.preferences.update_many(
+                        {"userId": payload.legacyUuid},
+                        {"$set": {"userId": apple_user_id}}
+                    )
+                    
+                    # Update Achievements/Stats (if stored with ID)
+                     # (Assuming simple aggregation, but if there are specific docs, update them too)
+            
+            # Create User Record
+            new_user = {
+                "userId": apple_user_id, # Our internal ID is now the Apple Sub 
+                "appleUserId": apple_user_id,
+                "email": None, # Apple might not provide it reliably every time
+                "displayName": payload.fullName or "Eco Warrior",
+                "createdAt": current_time,
+                "lastLogin": current_time,
+                "isVerified": True
+            }
+            db.users.insert_one(new_user)
+            print(f"✅ Created new user: {apple_user_id}")
+            
+        else:
+            # Update last login
+            db.users.update_one(
+                {"appleUserId": apple_user_id},
+                {"$set": {"lastLogin": current_time}}
+            )
+            print(f"👋 Welcome back: {apple_user_id}")
+            
+        # 4. Issue Session Token
+        session_token = AuthSystem.create_session_token(apple_user_id)
+        
+        return {
+            "success": True,
+            "token": session_token,
+            "userId": apple_user_id,
+            "isNewUser": user is None
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Login failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Login processing failed: {str(e)}")
+
 # ======================== TASK ROUTES ========================
 
 @api.get("/tasks")
@@ -144,11 +237,13 @@ def get_tasks(
     category: Optional[str] = Query(None),
     completed: Optional[bool] = Query(None),
     limit: int = Query(100, ge=1, le=500),
-    x_user_id: Optional[str] = Header(None)
+    limit: int = Query(100, ge=1, le=500),
+    user_id: str = Depends(get_current_user) # ✅ Secure Dependency
 ):
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
+        # user_id is now provided by Depends
+
         
         query = {"userId": user_id}
         if date:
@@ -168,11 +263,11 @@ def get_tasks(
 @api.post("/tasks", status_code=201)
 def create_task(
     payload: CreateTaskPayload,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     try:
         task_date = payload.date or date.today().isoformat()
-        user_id = get_user_id(x_user_id)
+        # user_id provided by Depends
         
         task_id = str(uuid.uuid4())
         
@@ -209,11 +304,13 @@ def create_task(
 def update_task(
     task_id: str,
     payload: UpdateTaskPayload,
-    x_user_id: Optional[str] = Header(None)
+    limit: int = Query(100, ge=1, le=500),
+    user_id: str = Depends(get_current_user) # ✅ Secure Dependency
 ):
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
+        # user_id is now provided by Depends
+
         
         task = db.tasks.find_one({"id": task_id, "userId": user_id})
         
@@ -292,11 +389,13 @@ def update_task(
 @api.delete("/tasks/{task_id}")
 def delete_task(
     task_id: str,
-    x_user_id: Optional[str] = Header(None)
+    limit: int = Query(100, ge=1, le=500),
+    user_id: str = Depends(get_current_user) # ✅ Secure Dependency
 ):
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
+        # user_id is now provided by Depends
+
         
         result = db.tasks.delete_one({"id": task_id, "userId": user_id})
         
@@ -322,10 +421,10 @@ def delete_task(
 # ======================== STATS ROUTES ========================
 
 @api.get("/stats/weekly")
-def weekly_stats(x_user_id: Optional[str] = Header(None)):
+def weekly_stats(user_id: str = Depends(get_current_user)):
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
+        # user_id provided by Depends
         
         today = date.today()
         week_start = today - timedelta(days=today.weekday())
@@ -371,10 +470,10 @@ def weekly_stats(x_user_id: Optional[str] = Header(None)):
         raise HTTPException(status_code=500, detail=f"Failed to fetch stats: {str(e)}")
 
 @api.get("/stats/monthly")
-def monthly_stats(x_user_id: Optional[str] = Header(None)):
+def monthly_stats(user_id: str = Depends(get_current_user)):
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
+        # user_id provided by Depends
         
         today = date.today()
         month_start = today.replace(day=1)
@@ -424,10 +523,10 @@ def monthly_stats(x_user_id: Optional[str] = Header(None)):
 # ======================== PREFERENCES ROUTES ========================
 
 @api.get("/preferences")
-async def get_preferences(x_user_id: Optional[str] = Header(None)):
+async def get_preferences(user_id: str = Depends(get_current_user)):
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
+        # user_id provided by Depends
         prefs = db.preferences.find_one({"userId": user_id})
         
         if not prefs:
@@ -451,11 +550,13 @@ async def update_preferences(
     country: Optional[str] = Body(None),
     interests: Optional[List[str]] = Body(None),
     language: Optional[str] = Body(None),
-    x_user_id: Optional[str] = Header(None)
+    limit: int = Query(100, ge=1, le=500),
+    user_id: str = Depends(get_current_user) # ✅ Secure Dependency
 ):
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
+        # user_id is now provided by Depends
+
         
         update_data = {}
         if country:
@@ -571,11 +672,11 @@ def shutdown_event():
 # ======================== NEW: USER PROFILE & ACHIEVEMENTS ========================
 
 @api.get("/profile")
-def get_profile(x_user_id: Optional[str] = Header(None)):
+def get_profile(user_id: str = Depends(get_current_user)):
     """Get user profile with achievements and stats"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
+        # user_id provided by Depends
         
         from rewards_system import get_user_profile, calculate_streak
         
@@ -593,11 +694,11 @@ def get_profile(x_user_id: Optional[str] = Header(None)):
         raise HTTPException(status_code=500, detail=f"Failed to fetch profile: {str(e)}")
 
 @api.get("/achievements")
-def get_achievements(x_user_id: Optional[str] = Header(None)):
+def get_achievements(user_id: str = Depends(get_current_user)):
     """Get all achievements with unlock status"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
+        # user_id provided by Depends
         
         from rewards_system import ACHIEVEMENTS, get_user_profile
         
@@ -622,11 +723,11 @@ def get_achievements(x_user_id: Optional[str] = Header(None)):
         raise HTTPException(status_code=500, detail=f"Failed to fetch achievements: {str(e)}")
 
 @api.get("/streak")
-def get_streak(x_user_id: Optional[str] = Header(None)):
+def get_streak(user_id: str = Depends(get_current_user)):
     """Get streak information"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
+        # user_id provided by Depends
         
         from rewards_system import calculate_streak
         
@@ -655,11 +756,11 @@ def generate_share_id():
     return "".join(random.choice(chars) for _ in range(6))
 
 @api.post("/share")
-def share_task(payload: ShareTaskPayload, x_user_id: Optional[str] = Header(None)):
+def share_task(payload: ShareTaskPayload, user_id: str = Depends(get_current_user)):
     """Create a short share link for a task"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
+        # user_id provided by Depends
         
         # Generate unique ID
         share_id = generate_share_id()
@@ -724,11 +825,12 @@ class PrivacySettingsPayload(BaseModel):
 @api.get("/ranking")
 def get_ranking(
     limit: int = Query(50, ge=1, le=100),
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Get global leaderboard"""
     try:
         db = get_db()
+        from social_system import get_global_ranking
         from social_system import get_global_ranking
         
         ranking = get_global_ranking(db, limit)
@@ -737,11 +839,11 @@ def get_ranking(
         raise HTTPException(status_code=500, detail=f"Failed to fetch ranking: {str(e)}")
 
 @api.get("/ranking/me")
-def get_my_rank(x_user_id: Optional[str] = Header(None)):
+def get_my_rank(user_id: str = Depends(get_current_user)):
     """Get current user's rank and nearby users"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
+        # user_id provided by Depends
         from social_system import get_user_rank
         
         rank_info = get_user_rank(db, user_id)
@@ -754,11 +856,11 @@ def get_my_rank(x_user_id: Optional[str] = Header(None)):
 # --- Social Profile Endpoints ---
 
 @api.get("/social/profile")
-def get_social_profile_endpoint(x_user_id: Optional[str] = Header(None)):
+def get_social_profile_endpoint(user_id: str = Depends(get_current_user)):
     """Get current user's extended social profile"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
+        # user_id provided by Depends
         from social_system import get_social_profile, get_user_rank
         
         profile = get_social_profile(db, user_id)
@@ -776,12 +878,12 @@ def get_social_profile_endpoint(x_user_id: Optional[str] = Header(None)):
 @api.patch("/social/profile")
 def update_social_profile(
     payload: ProfileUpdatePayload,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Update current user's profile (displayName, bio)"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
+        # user_id provided by Depends
         from social_system import update_user_profile
         
         profile = update_user_profile(db, user_id, payload.displayName, payload.bio)
@@ -794,7 +896,7 @@ def update_social_profile(
 @api.get("/users/{target_id}/profile")
 def get_public_profile(
     target_id: str,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Get another user's public profile"""
     try:
