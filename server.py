@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Query, Body, Header
+from fastapi import FastAPI, APIRouter, HTTPException, Query, Body, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from datetime import datetime, date, timedelta
@@ -11,7 +11,7 @@ from bson import ObjectId
 
 # Import external data files
 from task_templates import TASK_POOL
-from task_templates import TASK_POOL
+
 from learning_content import LEARNING_ARTICLES
 from auth_system import AuthSystem, get_current_user # ✅ NEW Secure Auth
 
@@ -237,7 +237,6 @@ def get_tasks(
     category: Optional[str] = Query(None),
     completed: Optional[bool] = Query(None),
     limit: int = Query(100, ge=1, le=500),
-    limit: int = Query(100, ge=1, le=500),
     user_id: str = Depends(get_current_user) # ✅ Secure Dependency
 ):
     try:
@@ -304,7 +303,6 @@ def create_task(
 def update_task(
     task_id: str,
     payload: UpdateTaskPayload,
-    limit: int = Query(100, ge=1, le=500),
     user_id: str = Depends(get_current_user) # ✅ Secure Dependency
 ):
     try:
@@ -389,7 +387,6 @@ def update_task(
 @api.delete("/tasks/{task_id}")
 def delete_task(
     task_id: str,
-    limit: int = Query(100, ge=1, le=500),
     user_id: str = Depends(get_current_user) # ✅ Secure Dependency
 ):
     try:
@@ -550,7 +547,6 @@ async def update_preferences(
     country: Optional[str] = Body(None),
     interests: Optional[List[str]] = Body(None),
     language: Optional[str] = Body(None),
-    limit: int = Query(100, ge=1, le=500),
     user_id: str = Depends(get_current_user) # ✅ Secure Dependency
 ):
     try:
