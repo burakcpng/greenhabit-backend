@@ -1,153 +1,304 @@
 """
 Comprehensive learning content for the GreenHabit app.
-Includes 12+ deep-dive articles on sustainability, kitchen efficiency, and eco-education.
-All content is professionally written in English.
+Includes ~30 deep-dive articles on sustainability, ecology, and scientific facts.
+All content is professionally written in English for a global audience.
 """
 
 import uuid
 
 LEARNING_ARTICLES = [
+    # --- WATER & OCEANS ---
     {
         "id": str(uuid.uuid4()),
-        "title": "Water Conservation: From Tap to Table",
-        "details": """Water is our most precious resource, but much of our consumption is invisible. 
+        "title": "Virtual Water: The Invisible Consumption",
+        "details": """The water running from your tap is just the tip of the iceberg. 'Virtual Water' is the total amount of water used to produce a product.
 
-1. **At the Tap**: A single dripping faucet can waste up to 75 liters per day. Beyond fixing leaks, simple habits like turning off the tap while brushing teeth or using a bowl to wash vegetables (instead of running water) can save thousands of liters per year.
-2. **Virtual Water**: This is the 'hidden' water used to produce food. For instance, 1kg of beef requires ~15,000 liters of water, whereas 1kg of potatoes requires only ~290 liters. 
-3. **Smart Gardening**: Water plants early in the morning or late at night to reduce evaporation. Use drought-resistant local plants to maintain a beautiful garden without heavy irrigation.
-
-Small changes in how we wash produce and what we choose to put on our plates can drastically reduce our total water footprint.""",
+- **A Pair of Jeans:** From growing the cotton to dyeing the fabric, a single pair of jeans requires about **10,000 liters** of water.
+- **A Cup of Coffee:** It takes **140 liters** of water to grow, process, and transport the beans for just one morning cup.
+- **Solution:** Buying fewer, higher-quality clothes and preventing food waste saves far more water than just turning off the tap.""",
         "category": "Water"
     },
     {
         "id": str(uuid.uuid4()),
-        "title": "Kitchen Energy Mastery",
-        "details": """The kitchen is the energy heart of the home. Optimizing appliance use is key to lowering your utility bills and carbon emissions.
+        "title": "What is Ocean Acidification?",
+        "details": """Oceans absorb about 30% of the carbon dioxide (CO2) in the atmosphere. While this helps regulate the climate, excess CO2 changes the chemistry of seawater, making it more acidic.
 
-- **Refrigeration**: Keep coils clean and ensure door seals are airtight. A fridge that isn't sealed properly can waste up to 30% more energy. 
-- **The Oven Rule**: Avoid 'peeking'—opening the oven door drops the temperature by 25°C instantly. Whenever possible, use an air fryer or microwave for smaller portions as they are significantly more efficient.
-- **Cooking with Lids**: Always use a lid on pots. It traps heat, allowing water to boil faster and food to simmer at lower energy settings.
-- **LED Lighting**: If your kitchen still uses old bulbs, switching to LEDs can reduce lighting energy use by 75% and they last 25 times longer.""",
+- **The Danger:** Acidic water depletes carbonate ions, making it difficult for corals, mussels, and plankton to build their shells.
+- **Chain Reaction:** If plankton populations collapse, the fish that feed on them will starve, threatening the entire marine ecosystem.""",
+        "category": "Water"
+    },
+    {
+        "id": str(uuid.uuid4()),
+        "title": "Microplastics: Plastic on Our Plates",
+        "details": """Microplastics are plastic particles smaller than 5mm. Plastics in the ocean eventually break down into these tiny pieces, are eaten by fish, and enter our food chain.
+
+- **Scientific Fact:** Research suggests the average person ingests about **5 grams** of plastic (roughly the weight of a credit card) every week.
+- **Sources:** Synthetic clothing fibers from washing machines, tire wear dust, and degraded single-use plastics.""",
+        "category": "Water"
+    },
+    {
+        "id": str(uuid.uuid4()),
+        "title": "The Science of Rainwater Harvesting",
+        "details": """Rainwater is often healthier for plants than tap water because it is free of chlorine and fluoride, and has an ideal pH level.
+
+- **Potential:** On a 100 square meter roof, just 1mm of rainfall yields **100 liters** of water.
+- **Usage:** Beyond gardening, using filtered rainwater for toilet flushing can reduce household potable water consumption by up to 40%.""",
+        "category": "Water"
+    },
+
+    # --- ENERGY & CLIMATE ---
+    {
+        "id": str(uuid.uuid4()),
+        "title": "Vampire Energy (Standby Power)",
+        "details": """Appliances continue to consume electricity even when turned off if they remain plugged in. This is called 'Vampire Energy' or 'Phantom Load'.
+
+- **Data:** In the average home, **10%** of the electricity bill comes from devices in standby mode.
+- **Culprits:** TVs, microwaves (digital clocks), computers, and phone chargers.
+- **Solution:** Use smart power strips to cut power to all devices with a single switch.""",
         "category": "Energy"
     },
     {
         "id": str(uuid.uuid4()),
-        "title": "The Science of Composting & Soil Health",
-        "details": """Composting turns kitchen 'waste' into nutrient-rich soil, preventing methane emissions in landfills.
+        "title": "The Miracle of LED Technology",
+        "details": """Old incandescent bulbs converted 90% of energy into heat, not light. LEDs work on the opposite principle.
 
-**The Golden Mix**:
-- **Greens (Nitrogen)**: Vegetable scraps, fruit peels, coffee grounds.
-- **Browns (Carbon)**: Dried leaves, cardboard, shredded paper.
-Maintain a 2:1 ratio of Browns to Greens for a healthy, odorless pile.
+- **Efficiency:** LEDs use 80-90% less energy than incandescent bulbs.
+- **Lifespan:** An LED bulb can last 25,000 hours, while an incandescent lasts only about 1,000 hours.
+- **Cooling:** Because they emit less heat, they also reduce air conditioning loads in the summer.""",
+        "category": "Energy"
+    },
+    {
+        "id": str(uuid.uuid4()),
+        "title": "The Greenhouse Effect: Methane vs. CO2",
+        "details": """Greenhouse gases blanket the Earth, trapping solar heat. However, since the industrial revolution, this blanket has become too thick.
 
-**Apartment Solutions**: If you don't have a yard, consider 'Bokashi' (fermentation) or 'Vermicomposting' (worm bins). These compact systems allow urban dwellers to recycle organic waste efficiently. Composting not only reduces your trash volume by 30% but also provides the best natural fertilizer for your houseplants or balcony garden.""",
+- **Potency:** While Methane stays in the atmosphere for a shorter time than CO2, it traps heat **25 times** more effectively over a 100-year period.
+- **Sources:** Major methane sources include livestock agriculture, rice paddies, and decomposing waste in landfills.""",
+        "category": "Energy"
+    },
+    {
+        "id": str(uuid.uuid4()),
+        "title": "The Carbon Cost of Data Centers",
+        "details": """The internet doesn't live in a fluffy 'cloud'; it lives in massive physical data centers. Every email, video stream, and AI query consumes energy.
+
+- **Fact:** Data centers account for about 1-2% of global electricity consumption.
+- **Digital Hygiene:** Deleting unnecessary emails and emptying your spam folder reduces server load and the energy needed for cooling and storage.""",
+        "category": "Energy"
+    },
+
+    # --- FOOD & AGRICULTURE ---
+    {
+        "id": str(uuid.uuid4()),
+        "title": "If Food Waste Were a Country...",
+        "details": """If food waste were a country, it would be the **third-largest** emitter of greenhouse gases in the world, after China and the USA.
+
+- **Rotting Food:** Food rotting in landfills without oxygen produces Methane, a potent greenhouse gas.
+- **Resource Waste:** Throwing away an apple also means throwing away the water, labor, and transport fuel used to grow it.""",
+        "category": "Food"
+    },
+    {
+        "id": str(uuid.uuid4()),
+        "title": "The Resource Intensity of Meat",
+        "details": """Animal agriculture consumes a disproportionate amount of resources compared to plant-based agriculture.
+
+- **Land Use:** Livestock takes up 77% of global agricultural land but produces only 18% of the world's calories.
+- **Conversion:** It takes roughly 25 calories of plant feed to produce just 1 calorie of beef.
+- **Water:** Producing 1kg of beef requires ~15,000 liters of water, while 1kg of lentils requires only ~50 liters.""",
+        "category": "Food"
+    },
+    {
+        "id": str(uuid.uuid4()),
+        "title": "Understanding Food Miles",
+        "details": """'Food Miles' measure the distance food travels from farm to fork.
+
+- **Air vs. Sea:** Highly perishable fruits flown in out-of-season (e.g., berries in winter) can cause 50x more emissions than bananas shipped by sea.
+- **Seasonality:** Eating locally and seasonally eliminates the need for energy-intensive heated greenhouses and long-haul transport.""",
+        "category": "Food"
+    },
+    {
+        "id": str(uuid.uuid4()),
+        "title": "Soil Health as a Carbon Sink",
+        "details": """Healthy soil is one of the world's largest carbon reservoirs.
+
+- **Regenerative Ag:** No-till farming preserves soil structure, sequestering carbon underground instead of releasing it.
+- **Pesticides:** Excessive chemical use kills microscopic soil life, reducing the soil's ability to hold water and leading to erosion.""",
+        "category": "Food"
+    },
+
+    # --- WASTE & CIRCULAR ECONOMY ---
+    {
+        "id": str(uuid.uuid4()),
+        "title": "The Half-Life of Plastic",
+        "details": """Plastic does not biodegrade; it only photodegrades into smaller pieces (microplastics).
+
+- **Timelines:**
+  - Plastic bottle: 450 years
+  - Disposable diaper: 500 years
+  - Fishing line: 600 years
+- **Fact:** Virtually every piece of plastic ever made still exists in some form today.""",
         "category": "Waste"
     },
     {
         "id": str(uuid.uuid4()),
-        "title": "Understanding Date Labels & Food Safety",
-        "details": """Misunderstanding date labels is a leading cause of preventable food waste. 
+        "title": "What is the Circular Economy?",
+        "details": """Our current system is 'Take-Make-Waste' (Linear). A circular economy mimics nature; there is no waste, only feedstock for the next cycle.
 
-- **'Use By'**: This is about safety. Do not eat food past this date, but you can freeze it *on* the date to save it for later.
-- **'Best Before'**: This is about quality. The food is still safe to eat after this date, but it might lose some texture or flavor. Canned goods and dry pasta are safe for months or even years past this date if the packaging is intact.
-- **The Senses Test**: Trust your nose and eyes. If bread isn't moldy or milk doesn't smell sour, it's often still good to use. Organising your fridge with a 'First In, First Out' (FIFO) system ensures older items are used before they expire.""",
+- **Principles:**
+  1. Design out waste and pollution.
+  2. Keep products and materials in use (Repair, Reuse).
+  3. Regenerate natural systems.""",
         "category": "Waste"
     },
     {
         "id": str(uuid.uuid4()),
-        "title": "Food Miles: The True Cost of Distance",
-        "details": """The average meal travels over 2,000 kilometers before reaching your fork. This transport contributes heavily to global CO2 levels.
+        "title": "The Urban Mine: E-Waste",
+        "details": """Old phones and laptops aren't trash; they are high-grade metal ores.
 
-- **Seasonal Eating**: Buying food when it naturally grows in your region reduces the need for energy-intensive greenhouses and long-distance refrigerated shipping.
-- **Support Local**: Shopping at farmers' markets supports local agriculture and reduces the packaging needed for long-haul transport.
-- **Air-Freighted Foods**: Highly perishable out-of-season items (like berries in winter) are often flown in, creating 50x more emissions than sea shipping. Choosing 'sea-shipped' or frozen seasonal produce is a much greener alternative.""",
+- **Value:** There is 100 times more gold in a ton of smartphones than in a ton of gold ore.
+- **Danger:** When recycled improperly, toxic materials like lead and mercury can leach into soil and groundwater.""",
+        "category": "Waste"
+    },
+    {
+        "id": str(uuid.uuid4()),
+        "title": "The Truth About Fast Fashion",
+        "details": """The fashion industry generates more carbon emissions than all international flights and maritime shipping combined.
+
+- **Synthetics:** 60% of clothing materials are plastic (polyester, nylon).
+- **Dyes:** Textile dyeing is the second largest polluter of water globally.
+- **Usage:** Extending the life of a garment by just 9 months reduces its carbon and water footprints by 20-30%.""",
+        "category": "Waste"
+    },
+    {
+        "id": str(uuid.uuid4()),
+        "title": "The Chemistry of Composting",
+        "details": """Composting is the aerobic decomposition of organic matter by microorganisms.
+
+- **Greens (Nitrogen):** Vegetable peels, coffee grounds.
+- **Browns (Carbon):** Dry leaves, cardboard, twigs.
+- **Result:** The right mix (1 Green : 2 Browns) transforms waste into nutrient-rich humus and prevents methane formation in landfills.""",
+        "category": "Waste"
+    },
+
+    # --- TRANSPORT & CITIES ---
+    {
+        "id": str(uuid.uuid4()),
+        "title": "EVs and the Carbon Debt",
+        "details": """Electric Vehicles (EVs) have zero tailpipe emissions, but manufacturing their batteries is carbon-intensive.
+
+- **Break-even Point:** An EV typically offsets its higher manufacturing emissions after 20,000 - 30,000 km of driving compared to a gas car.
+- **The Grid:** An EV gets cleaner as the energy grid gets cleaner (shifting from coal to wind/solar).""",
         "category": "Transport"
     },
     {
         "id": str(uuid.uuid4()),
-        "title": "The Zero-Waste Shopping Guide",
-        "details": """Waste management starts at the grocery store. Transitioning to a zero-waste shopping habit involves preparation and mindfulness.
+        "title": "The Efficiency of the Bicycle",
+        "details": """The bicycle is the most efficient machine ever created for converting human energy into motion.
 
-1. **Reusable Kits**: Always keep a few tote bags and small cotton produce bags in your car or by the door. Refusing a single plastic bag prevents 500 years of environmental pollution.
-2. **Bulk Buying**: Look for stores that offer dry goods like grains, nuts, and spices in bulk bins. You can bring your own jars and fill only what you need, reducing both food and packaging waste.
-3. **Concentrated Refills**: For cleaning supplies, choose concentrated liquids that you mix with water at home. This reduces the weight and volume of plastic being transported globally.""",
-        "category": "Waste"
+- **Energy:** A cyclist travels 3 times faster and 4 times further than a pedestrian using the same amount of energy.
+- **Space:** You can park 10-12 bicycles in a single car parking space. Micromobility is the key to solving urban congestion.""",
+        "category": "Transport"
     },
     {
         "id": str(uuid.uuid4()),
-        "title": "The Impact of Microplastics in the Kitchen",
-        "details": """Microplastics are tiny plastic particles less than 5mm in size. They have infiltrated our food chain, largely through the tools we use in the kitchen.
+        "title": "The Urban Heat Island Effect",
+        "details": """City centers are often 1-3°C hotter than surrounding rural areas. This is the 'Urban Heat Island' effect.
 
-- **Cutting Boards**: Plastic cutting boards shed millions of microparticles into your food during chopping. Switch to wood or bamboo boards.
-- **Tea Bags**: Many modern tea bags are sealed with plastic, releasing billions of microplastics into a single cup of hot tea. Use loose-leaf tea with a stainless steel infuser.
-- **Storage**: When plastic containers are heated, chemicals and microplastics leach into food. Transition to glass or stainless steel storage containers.
-- **Tap Water**: Use a high-quality water filter to catch microplastics that may be present in municipal water supplies.""",
+- **Causes:** Concrete and asphalt absorb and retain heat. Lack of greenery reduces cooling via evaporation.
+- **Solution:** Green roofs, lighter-colored pavements, and urban trees can significantly cool cities and reduce air conditioning needs.""",
+        "category": "Transport"
+    },
+
+    # --- BIODIVERSITY & NATURE ---
+    {
+        "id": str(uuid.uuid4()),
+        "title": "Why Bees Matter",
+        "details": """Bees don't just make honey; they are the guarantors of global food security.
+
+- **Pollination:** 1 in every 3 bites of food we eat (fruits, vegetables, nuts) depends on pollinators.
+- **Threat:** Pesticides and habitat loss are driving bee populations down. Planting bee-friendly flowers (like lavender or thyme) can help restore local populations.""",
         "category": "General"
     },
     {
         "id": str(uuid.uuid4()),
-        "title": "Plant-Based Power: Diet and CO2",
-        "details": """Your dietary choices are one of your strongest levers for environmental change. Animal agriculture is responsible for nearly 15% of global greenhouse gas emissions.
+        "title": "How Trees Cool the Planet",
+        "details": """Trees are nature's air conditioners.
 
-- **The Beef Factor**: Beef production creates roughly 10 times more emissions than poultry or pork, and nearly 30-50 times more than legumes like lentils or beans.
-- **Methane Emissions**: Livestock produce methane, which is far more potent than CO2 in the short term.
-- **Land Use**: Growing crops to feed animals is inefficient. We can feed more people with less land by consuming plants directly.
-Even participating in 'Meatless Mondays' can reduce your individual carbon footprint by hundreds of kilograms per year.""",
+- **Shade:** They block direct sunlight, keeping surfaces cool.
+- **Transpiration:** Trees release water vapor through their leaves, which cools the surrounding air.
+- **Impact:** A strategically planted tree can reduce a home's air conditioning needs by up to 30%.""",
         "category": "General"
     },
     {
         "id": str(uuid.uuid4()),
-        "title": "Eco-Friendly Cleaning: Nature's Chemistry",
-        "details": """Most commercial cleaning products contain harsh chemicals that eventually wash into our waterways, harming aquatic life.
+        "title": "Deforestation and the Amazon",
+        "details": """The Amazon rainforest is often called the 'Lungs of the Earth', but it's more accurately the 'Earth's Air Conditioner'.
 
-- **Vinegar**: A natural disinfectant and grease-cutter. Use it to clean glass, countertops, and even as a fabric softener.
-- **Baking Soda**: Excellent for scrubbing stains and absorbing odors in the fridge or trash bins.
-- **Citrus Peels**: Infuse vinegar with lemon or orange peels for a powerful, fresh-smelling all-purpose cleaner.
-- **Castile Soap**: A biodegradable, plant-based soap that can be used for everything from dishes to hand-washing.
-Switching to natural cleaners reduces indoor air pollution and keeps toxic runoff out of our ecosystems.""",
-        "category": "Water"
-    },
-    {
-        "id": str(uuid.uuid4()),
-        "title": "The Hidden Energy of Hot Water",
-        "details": """Heating water is typically the second largest energy expense in a household.
-
-- **Wash Cold**: About 90% of the energy used by a washing machine goes toward heating the water. Modern detergents are designed to work perfectly in cold water.
-- **Shower Habits**: Reducing your shower temperature just slightly and installing a low-flow showerhead can save significant energy and water.
-- **Dishwashers**: Always wait for a full load. Modern dishwashers are actually more water-efficient than hand-washing, but only when used at full capacity.
-- **Pipe Insulation**: Insulating your hot water pipes ensures that heat isn't lost as the water travels to your faucet.""",
-        "category": "Energy"
-    },
-    {
-        "id": str(uuid.uuid4()),
-        "title": "Circular Economy: Repair over Replace",
-        "details": """Our current 'Take-Make-Waste' model is unsustainable. A circular economy focuses on keeping items in use for as long as possible.
-
-- **Kitchen Appliances**: Before throwing away a broken toaster or blender, check if it can be repaired. Many cities have 'Repair Cafés' where volunteers help fix small electronics.
-- **Sharp Knives**: Regularly sharpening your kitchen knives prevents you from buying new ones and makes cooking safer and faster.
-- **Cast Iron Longevity**: Quality cookware like cast iron can last for generations if properly seasoned and maintained, reducing the need for non-stick pans that degrade quickly.
-Embracing a 'repair first' mindset reduces the demand for new manufacturing and the resulting industrial emissions.""",
+- **Carbon Storage:** Trees absorb carbon as they grow. When cut or burned, that stored carbon is released back into the atmosphere.
+- **Rain:** The Amazon generates its own rainfall. Deforestation can disrupt this cycle, turning the rainforest into a savannah.""",
         "category": "General"
     },
     {
         "id": str(uuid.uuid4()),
-        "title": "Sustainable Seafood: Protecting our Oceans",
-        "details": """Overfishing is a critical threat to ocean biodiversity. As a consumer, your choices at the fish counter matter.
+        "title": "The Importance of Biodiversity",
+        "details": """Biodiversity is the variety of life in an ecosystem. The more diverse an ecosystem, the more resilient it is to disease and climate change.
 
-- **Certifications**: Look for the MSC (Marine Stewardship Council) or ASC (Aquaculture Stewardship Council) labels to ensure the fish was caught or farmed responsibly.
-- **Eat Lower on the Food Chain**: Small fish like sardines and mackerel are more sustainable and contain fewer heavy metals than large predators like tuna or swordfish.
-- **Bycatch Issues**: Avoid species caught using destructive methods like bottom trawling, which destroys seafloor habitats and kills non-target species.
-- **Seasonal Fish**: Just like produce, different fish species have seasons. Buying in-season helps maintain healthy population levels during spawning periods.""",
+- **Example:** A forest with only one type of tree (monoculture) can be wiped out by a single pest, whereas a diverse forest survives.
+- **Human Benefit:** Over 50% of modern medicines are derived from nature and plants.""",
         "category": "General"
+    },
+
+    # --- SOCIAL & PSYCHOLOGY ---
+    {
+        "id": str(uuid.uuid4()),
+        "title": "Dealing with Eco-Anxiety",
+        "details": """Eco-anxiety is the chronic fear of environmental doom.
+
+- **Coping:** The best antidote to anxiety is action. reducing your individual footprint, joining local community groups, and focusing on controllable variables builds psychological resilience.""",
+        "category": "Social"
     },
     {
         "id": str(uuid.uuid4()),
-        "title": "Understanding Your Carbon Footprint",
-        "details": """A carbon footprint is the total amount of greenhouse gases (including methane and nitrous oxide) that are generated by our actions.
+        "title": "Spotting Greenwashing",
+        "details": """Greenwashing is a marketing strategy where companies deceptively claim their products are eco-friendly.
 
-- **The 2-Ton Goal**: Currently, the average person in high-income countries has a footprint of 10-15 tons. To meet global climate goals, we need to bring this down to under 2 tons by 2050.
-- **Direct vs. Indirect**: Direct emissions come from things you control (your car, your heating). Indirect emissions come from the production of things you buy (your phone, your clothes, your food).
-- **Measurement**: Use the GreenHabit app to identify which areas of your life—transport, diet, or energy—are the biggest contributors. Small, consistent changes are more effective than temporary drastic ones.""",
-        "category": "General"
+- **Tips:** Be skeptical of vague terms like "Natural" or "Eco-friendly" without definitions.
+- **Proof:** Look for third-party certifications (FSC, Organic, Fair Trade). A green package does not mean a green product.""",
+        "category": "Social"
+    },
+    {
+        "id": str(uuid.uuid4()),
+        "title": "Minimalism as Sustainability",
+        "details": """Minimalism isn't just about owning less; it's about intentional consumption.
+
+- **Connection:** Buying less directly reduces emissions from manufacturing and transport.
+- **Quality:** Focusing on quality over quantity and buying durable goods prevents waste from entering landfills.""",
+        "category": "Social"
+    },
+    {
+        "id": str(uuid.uuid4()),
+        "title": "Why Fair Trade Matters",
+        "details": """Sustainability is about people as well as the planet.
+
+- **Definition:** Fair Trade ensures producers (especially for coffee, cocoa, bananas) are paid a living wage and no child labor is used.
+- **Link:** You cannot protect forests without fighting poverty, as impoverished communities may be forced to exploit natural resources to survive.""",
+        "category": "Social"
+    },
+    {
+        "id": str(uuid.uuid4()),
+        "title": "The Sharing Economy",
+        "details": """An economic model defined by access to goods rather than ownership.
+
+- **Examples:** Car-sharing, tool libraries, peer-to-peer rentals.
+- **Benefit:** If you only need a drill for 15 minutes a year, you don't need to own one. Sharing reduces the demand for raw materials and manufacturing.""",
+        "category": "Social"
+    },
+    {
+        "id": str(uuid.uuid4()),
+        "title": "The Power of Individual Action",
+        "details": """'What can I do alone?' is a common fallacy.
+
+- **Social Proof:** Your actions influence your social circle. If you install solar panels, your neighbors are more likely to do the same.
+- **Market Signals:** As consumer demand shifts (e.g., for organic food or EVs), massive corporations are forced to change their production models.""",
+        "category": "Social"
     }
 ]

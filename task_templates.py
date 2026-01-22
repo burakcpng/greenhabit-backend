@@ -1,257 +1,412 @@
 """
-AI-powered task templates for GreenHabit.
-Focused on Kitchen Sustainability, Food Waste Reduction, and Resource Management.
-Categories map to server defaults (Energy, Water, Waste, Transport) but with a food/kitchen focus.
+Task templates for AI-powered task generation.
+Each category contains ~100 eco-friendly tasks focused on sustainability.
 """
 import uuid
 
 TASK_POOL = {
-    "Energy": [
-        {
-            "title": "🍳 Batch Cook Your Meals",
-            "details": "Cook multiple meals at once to maximize oven/stove energy efficiency. Reheating uses significantly less energy than cooking from scratch every time.",
-            "points": 20,
-            "estimatedImpact": "Saves ~0.2kg CO₂"
-        },
-        {
-            "title": "🧊 Thaw Food in the Fridge",
-            "details": "Move frozen food to the fridge overnight to thaw. This reduces the energy your fridge needs to keep cool and saves cooking energy later.",
-            "points": 10,
-            "estimatedImpact": "Saves ~0.1kg CO₂"
-        },
-        {
-            "title": "🔥 Match Pot to Burner Size",
-            "details": "Using a small pot on a large burner wastes heat. Match the cookware to the burner size to prevent energy loss.",
-            "points": 10,
-            "estimatedImpact": "Saves ~0.15kg CO₂"
-        },
-        {
-            "title": "☕ Boil Only Water You Need",
-            "details": "When making tea or coffee, measure the water first. Boiling excess water is one of the biggest energy wasters in the kitchen.",
-            "points": 5,
-            "estimatedImpact": "Saves ~0.05kg CO₂"
-        },
-        {
-            "title": "🥘 Keep the Oven Door Shut",
-            "details": "Avoid opening the oven door while cooking. Each opening drops the temperature by 25-50°F and forces the oven to work harder.",
-            "points": 15,
-            "estimatedImpact": "Saves ~0.2kg CO₂"
-        },
-        {
-            "title": "🌬️ Air Dry Your Dishes",
-            "details": "Turn off the 'heat dry' setting on your dishwasher and let the dishes air dry by opening the door slightly after the wash cycle.",
-            "points": 15,
-            "estimatedImpact": "Saves ~0.15kg CO₂"
-        },
-        {
-            "title": "🌡️ Check Fridge Seals",
-            "details": "Test your refrigerator door seals with a piece of paper. If it slides out easily, you are losing cold air and wasting electricity.",
-            "points": 20,
-            "estimatedImpact": "Saves ~0.3kg CO₂/day"
-        },
-        {
-            "title": "🍲 Use a Pressure Cooker",
-            "details": "Cook beans, stews, or meat in a pressure cooker. It speeds up cooking time drastically, saving huge amounts of energy.",
-            "points": 25,
-            "estimatedImpact": "Saves ~0.5kg CO₂"
-        },
-        {
-            "title": "🧹 Clean Refrigerator Coils",
-            "details": "Dusty coils force your fridge to work harder. Vacuum the coils at the back or bottom of your fridge.",
-            "points": 30,
-            "estimatedImpact": "Saves ~0.3kg CO₂"
-        },
-        {
-            "title": "🍲 Put a Lid on It",
-            "details": "Always cover your pots and pans while cooking. Water boils faster and food cooks quicker, using less gas or electricity.",
-            "points": 10,
-            "estimatedImpact": "Saves ~0.1kg CO₂"
-        }
-    ],
-    "Water": [
-        {
-            "title": "🥣 Wash Produce in a Bowl",
-            "details": "Instead of running the tap to wash fruits and veggies, fill a large bowl. Use the leftover water for your house plants!",
-            "points": 15,
-            "estimatedImpact": "Saves ~0.05kg CO₂e"
-        },
-        {
-            "title": "🍽️ Run Full Dishwasher Loads",
-            "details": "Wait until the dishwasher is completely full before running it. A full load is more water-efficient than hand washing.",
-            "points": 10,
-            "estimatedImpact": "Saves ~1.0kg CO₂e"
-        },
-        {
-            "title": "💧 Save Cooking Water",
-            "details": "Don't pour unsalted pasta or veggie boiling water down the drain. Let it cool and use it to water your garden or plants.",
-            "points": 15,
-            "estimatedImpact": "Saves ~0.02kg CO₂e"
-        },
-        {
-            "title": "🥩 Defrost Without Water",
-            "details": "Avoid thawing frozen foods under running water. Plan ahead and thaw in the fridge to save gallons of water.",
-            "points": 15,
-            "estimatedImpact": "Saves ~0.05kg CO₂e"
-        },
-        {
-            "title": "🧽 Soak Pots, Don't Scrub",
-            "details": "Soak dirty pots and pans in soapy water instead of scrubbing them under a running tap.",
-            "points": 10,
-            "estimatedImpact": "Saves ~0.3kg CO₂e"
-        },
-        {
-            "title": "🥬 Steam Instead of Boil",
-            "details": "Steaming vegetables uses significantly less water than boiling them, and it preserves more nutrients.",
-            "points": 10,
-            "estimatedImpact": "Saves ~0.1kg CO₂e"
-        },
-        {
-            "title": "🧊 Keep Water in the Fridge",
-            "details": "Keep a jug of water in the fridge so you don't have to run the tap waiting for it to get cold.",
-            "points": 5,
-            "estimatedImpact": "Saves ~0.02kg CO₂e"
-        },
-        {
-            "title": "🔧 Fix the Kitchen Drip",
-            "details": "Check your kitchen faucet for drips. Even a slow drip wastes an incredible amount of water over time.",
-            "points": 25,
-            "estimatedImpact": "Saves ~0.05kg CO₂e/day"
-        },
-        {
-            "title": "🥤 Use One Glass All Day",
-            "details": "Designate one glass for water drinking throughout the day to reduce the number of items that need washing.",
-            "points": 5,
-            "estimatedImpact": "Saves ~0.05kg CO₂e"
-        },
-        {
-            "title": "🚿 Install a Tap Aerator",
-            "details": "Install a simple aerator on your kitchen tap. It maintains pressure while reducing flow rate significantly.",
-            "points": 30,
-            "estimatedImpact": "Saves ~0.5kg CO₂e/day"
-        }
-    ],
-    "Waste": [
-        {
-            "title": "📅 Eat the 'Use-By' First",
-            "details": "Check your fridge for items nearing their expiration date and plan today's meal around saving them from the bin.",
-            "points": 20,
-            "estimatedImpact": "Saves ~1.5kg CO₂e"
-        },
-        {
-            "title": "🍌 Buy 'Ugly' Produce",
-            "details": "Choose misshapen fruits and vegetables at the store. They taste the same but are often discarded due to looks.",
-            "points": 15,
-            "estimatedImpact": "Saves ~0.5kg CO₂e"
-        },
-        {
-            "title": "🥡 Pack a Zero-Waste Lunch",
-            "details": "Use reusable containers, beeswax wraps, and real cutlery for your lunch today. No single-use plastics!",
-            "points": 15,
-            "estimatedImpact": "Saves ~0.2kg CO₂"
-        },
-        {
-            "title": "🥕 Start a Scrap Broth Bag",
-            "details": "Keep a bag in the freezer for vegetable peels, ends, and stalks. When full, boil them to make free vegetable stock.",
-            "points": 20,
-            "estimatedImpact": "Saves ~1.0kg CO₂e"
-        },
-        {
-            "title": "☕ Use Coffee Grounds",
-            "details": "Don't trash coffee grounds! Use them as a skin exfoliant or add them to soil for acid-loving plants.",
-            "points": 10,
-            "estimatedImpact": "Saves ~0.1kg CO₂e"
-        },
-        {
-            "title": "♻️ Compost Kitchen Scraps",
-            "details": "Put your fruit and vegetable peels in a compost bin instead of the trash. It returns nutrients to the earth.",
-            "points": 25,
-            "estimatedImpact": "Saves ~2.0kg CO₂e"
-        },
-        {
-            "title": "🛍️ Bulk Buy Dry Goods",
-            "details": "Buy rice, pasta, or beans in the largest package available or from bulk bins to reduce packaging waste per serving.",
-            "points": 15,
-            "estimatedImpact": "Saves ~0.1kg CO₂"
-        },
-        {
-            "title": "🥖 Revive Stale Bread",
-            "details": "Don't toss stale bread! Make croutons, breadcrumbs, or French toast instead.",
-            "points": 15,
-            "estimatedImpact": "Saves ~0.8kg CO₂e"
-        },
-        {
-            "title": "🥣 Eat Leftovers Night",
-            "details": "Dedicate tonight's dinner to clearing out leftovers from the fridge. It's an easy meal and saves food.",
-            "points": 20,
-            "estimatedImpact": "Saves ~1.5kg CO₂e"
-        },
-        {
-            "title": "🥤 Refuse Plastic Straws/Cutlery",
-            "details": "If ordering takeout, explicitly request 'no cutlery' and 'no straws' in the notes.",
-            "points": 10,
-            "estimatedImpact": "Saves ~0.05kg CO₂"
-        }
-    ],
     "Transport": [
         {
-            "title": "🚶 Walk for Groceries",
-            "details": "If you only need a few items, walk to the local market instead of driving to the big supermarket.",
-            "points": 20,
-            "estimatedImpact": "Saves ~0.5kg CO₂"
+            "title": "🚲 Bike to Work",
+            "details": "Use a bicycle instead of a motor vehicle today to ensure zero emissions and get some exercise.",
+            "points": 60,
+            "estimatedImpact": "Saves ~2.4kg CO₂"
         },
         {
-            "title": "🥬 Buy Local & Seasonal",
-            "details": "Check labels and buy produce grown in your country/region. Reduces 'food miles' significantly.",
-            "points": 15,
-            "estimatedImpact": "Saves ~0.5kg CO₂"
-        },
-        {
-            "title": "📝 Make a Shopping List",
-            "details": "Stick to a list to avoid forgetting items and having to make a second trip back to the store later.",
-            "points": 10,
+            "title": "🚌 Use Public Transport",
+            "details": "Share your carbon footprint by taking the bus, metro, or tram instead of a personal car.",
+            "points": 40,
             "estimatedImpact": "Saves ~1.5kg CO₂"
         },
         {
-            "title": "🎒 Bring Your Own Bag",
-            "details": "Remember your reusable tote bags for shopping. Keep them by the door or in your car.",
-            "points": 10,
-            "estimatedImpact": "Saves ~0.05kg CO₂"
-        },
-        {
-            "title": "🚛 Choose Standard Shipping",
-            "details": "When ordering kitchen supplies online, choose slower shipping. Express shipping often requires inefficient transport.",
-            "points": 10,
+            "title": "🚶 Short Distance Walk",
+            "details": "Walk instead of driving for distances under 2 km.",
+            "points": 15,
             "estimatedImpact": "Saves ~0.5kg CO₂"
         },
         {
-            "title": "🥩 Try a Meat-Free Day",
-            "details": "Meat production requires massive transport and resources. Skipping meat for one day reduces your dietary carbon footprint.",
+            "title": "🤝 Carpool",
+            "details": "Share your ride with a colleague or friend on your way to work or school.",
             "points": 30,
-            "estimatedImpact": "Saves ~2.0kg CO₂e"
+            "estimatedImpact": "Saves ~1.2kg CO₂"
         },
         {
-            "title": "🥚 Buy Eggs from a Local Farm",
-            "details": "If possible, buy eggs or dairy from a nearby farm or farmer's market to support local logistics.",
-            "points": 20,
+            "title": "🛴 Use Electric Scooter",
+            "details": "Choose an e-scooter over a taxi for short trips within the city.",
+            "points": 10,
             "estimatedImpact": "Saves ~0.3kg CO₂"
         },
         {
-            "title": "📦 Buy Concentrated Products",
-            "details": "Buy concentrated cleaning refills. They are smaller and lighter to transport than full bottles of water-heavy cleaner.",
-            "points": 15,
-            "estimatedImpact": "Saves ~0.2kg CO₂"
-        },
-        {
-            "title": "🚲 Bike to the Bakery",
-            "details": "Use your bicycle for your morning bread run or small errands.",
+            "title": "🚀 Use Cruise Control",
+            "details": "Using cruise control on highways prevents sudden accelerations and reduces fuel consumption by 10%.",
             "points": 20,
             "estimatedImpact": "Saves ~0.8kg CO₂"
         },
         {
-            "title": "🍽️ Eat at a Local Restaurant",
-            "details": "Choose a restaurant that sources ingredients locally to reduce the community's overall food transport footprint.",
+            "title": "⚖️ Remove Excess Weight",
+            "details": "Clear unnecessary items from your car trunk (every extra 45kg uses 2% more fuel).",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.2kg CO₂"
+        },
+        {
+            "title": "💨 Check Tire Pressure",
+            "details": "Low tire pressure increases friction and fuel consumption; check it today.",
+            "points": 10,
+            "estimatedImpact": "Saves ~0.4kg CO₂"
+        },
+        {
+            "title": "🛑 Avoid Idling",
+            "details": "Turn off the engine if you are stopping for more than 1 minute to avoid unnecessary exhaust fumes.",
+            "points": 10,
+            "estimatedImpact": "Saves ~0.3kg CO₂"
+        },
+        {
+            "title": "🚆 Train over Plane",
+            "details": "Choose the train over flying for domestic travel whenever possible; it's much eco-friendlier.",
+            "points": 100,
+            "estimatedImpact": "Saves ~5.0kg CO₂"
+        },
+        {
+            "title": "🏠 Work from Home",
+            "details": "Eliminate commute emissions by working from home today if your job allows.",
+            "points": 80,
+            "estimatedImpact": "Saves ~4.0kg CO₂"
+        },
+        {
+            "title": "🛒 Bulk Grocery Shopping",
+            "details": "Shop weekly instead of daily to reduce transport emissions.",
             "points": 15,
+            "estimatedImpact": "Saves ~0.5kg CO₂"
+        }
+    ],
+    "Energy": [
+        {
+            "title": "💡 Switch to LED Bulbs",
+            "details": "Replace an old incandescent bulb with an LED that consumes 80% less energy.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.1kg CO₂"
+        },
+        {
+            "title": "🌑 Turn Off Lights",
+            "details": "Make it a habit to strictly turn off lights when leaving a room today.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.05kg CO₂"
+        },
+        {
+            "title": "🌡️ Lower Thermostat by 1°C",
+            "details": "Lowering the thermostat by just 1 degree in winter saves 7% on energy.",
+            "points": 45,
+            "estimatedImpact": "Saves ~1.8kg CO₂"
+        },
+        {
+            "title": "❄️ Wash Clothes in Cold Water",
+            "details": "Wash your clothes in cold water instead of 30°C or 40°C.",
+            "points": 15,
+            "estimatedImpact": "Saves ~0.6kg CO₂"
+        },
+        {
+            "title": "👕 Skip the Dryer",
+            "details": "Air dry your clothes instead of using a machine to save massive amounts of energy.",
+            "points": 50,
+            "estimatedImpact": "Saves ~2.0kg CO₂"
+        },
+        {
+            "title": "🔌 Unplug Electronics (Vampire Power)",
+            "details": "Unplug unused TVs, computers, and devices to prevent standby power consumption.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.2kg CO₂"
+        },
+        {
+            "title": "☀️ Use Natural Light",
+            "details": "Open curtains fully during the day and avoid using artificial light.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.1kg CO₂"
+        },
+        {
+            "title": "🍽️ Run Full Dishwasher Loads",
+            "details": "Wait until the dishwasher is full before running it to ensure water and energy efficiency.",
+            "points": 10,
+            "estimatedImpact": "Saves ~0.4kg CO₂"
+        },
+        {
+            "title": "💻 Sleep Mode for Computer",
+            "details": "Use sleep mode instead of screensavers during short breaks.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.15kg CO₂"
+        },
+        {
+            "title": "🍲 Cook with Lid On",
+            "details": "Keep the pot lid on while cooking to reduce cooking time and energy use.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.1kg CO₂"
+        },
+        {
+            "title": "🚫 Don't Open Oven Door",
+            "details": "Avoid opening the oven door to check food; prevent heat loss.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.1kg CO₂"
+        },
+        {
+            "title": "☕ Boil Only Needed Water",
+            "details": "Only boil as much water as you need for your drink, not more.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.2kg CO₂"
+        },
+        {
+            "title": "🧹 Clean Fridge Coils",
+            "details": "Clean the dusty coils at the back of your fridge to increase its efficiency.",
+            "points": 10,
+            "estimatedImpact": "Saves ~0.3kg CO₂"
+        }
+    ],
+    "Food": [
+        {
+            "title": "🥗 Meat-Free Day (Vegetarian)",
+            "details": "Eating meat-free for a day significantly reduces your carbon footprint.",
+            "points": 85,
+            "estimatedImpact": "Saves ~3.5kg CO₂"
+        },
+        {
+            "title": "🌱 Plant-Based Day (Vegan)",
+            "details": "Maximize your impact by consuming no animal products today.",
+            "points": 100,
+            "estimatedImpact": "Saves ~4.5kg CO₂"
+        },
+        {
+            "title": "🚜 Eat Local Food",
+            "details": "Shop from local producers or markets to reduce transport emissions.",
+            "points": 15,
+            "estimatedImpact": "Saves ~0.5kg CO₂"
+        },
+        {
+            "title": "📅 Eat Seasonally",
+            "details": "Consume seasonal vegetables that don't require greenhouse heating.",
+            "points": 15,
+            "estimatedImpact": "Saves ~0.6kg CO₂"
+        },
+        {
+            "title": "🍲 Upcycle Leftovers",
+            "details": "Turn leftover food into a new meal instead of throwing it away.",
+            "points": 25,
             "estimatedImpact": "Saves ~1.0kg CO₂"
+        },
+        {
+            "title": "🥡 Reduce Packaged Food",
+            "details": "Buy in bulk or loose items instead of excessively packaged products.",
+            "points": 10,
+            "estimatedImpact": "Saves ~0.3kg CO₂"
+        },
+        {
+            "title": "🥤 Use Reusable Coffee Cup",
+            "details": "Prevent waste by using your own thermos instead of a paper cup.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.1kg CO₂"
+        },
+        {
+            "title": "👨‍🍳 Cook at Home",
+            "details": "Cook at home instead of ordering out (saving courier + packaging emissions).",
+            "points": 20,
+            "estimatedImpact": "Saves ~0.8kg CO₂"
+        },
+        {
+            "title": "🍽️ Control Portions",
+            "details": "Take only what you can eat to prevent food waste on your plate.",
+            "points": 15,
+            "estimatedImpact": "Saves ~0.5kg CO₂"
+        },
+        {
+            "title": "🍂 Compost Organic Waste",
+            "details": "Return organic waste to the soil instead of the trash bin.",
+            "points": 20,
+            "estimatedImpact": "Saves ~0.7kg CO₂"
+        },
+        {
+            "title": "🥜 Eat Legumes",
+            "details": "Eat lentils or chickpeas as a protein source instead of meat.",
+            "points": 40,
+            "estimatedImpact": "Saves ~1.5kg CO₂"
+        }
+    ],
+    "Waste": [
+        {
+            "title": "🛍️ Use Cloth Bags",
+            "details": "Don't take plastic bags when shopping; use your own cloth bag.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.05kg CO₂"
+        },
+        {
+            "title": "💧 Refuse Plastic Bottles",
+            "details": "Use a flask/canteen and refuse single-use plastic water bottles.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.2kg CO₂"
+        },
+        {
+            "title": "📄 Use Both Sides of Paper",
+            "details": "Use both sides of the paper at the office or school.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.1kg CO₂"
+        },
+        {
+            "title": "🔋 Recycle Batteries",
+            "details": "Dispose of batteries in battery recycling bins, not regular trash.",
+            "points": 25,
+            "estimatedImpact": "Saves ~1.0kg CO₂"
+        },
+        {
+            "title": "🥛 Choose Glass Bottles",
+            "details": "Prefer products in glass packaging over plastic.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.1kg CO₂"
+        },
+        {
+            "title": "🍹 Refuse Straws",
+            "details": "Refuse plastic straws; drink without one or use a reusable one.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.02kg CO₂"
+        },
+        {
+            "title": "🧵 Repair Clothes",
+            "details": "Sew torn clothes or fix buttons instead of throwing them away.",
+            "points": 75,
+            "estimatedImpact": "Saves ~3.0kg CO₂"
+        },
+        {
+            "title": "🧥 Buy Second Hand",
+            "details": "Choose second-hand or vintage items instead of new clothes.",
+            "points": 100,
+            "estimatedImpact": "Saves ~4.0kg CO₂"
+        },
+        {
+            "title": "🔌 Recycle E-Waste",
+            "details": "Take old cables and phones to an e-waste collection center.",
+            "points": 50,
+            "estimatedImpact": "Saves ~2.0kg CO₂"
+        },
+        {
+            "title": "🐝 Skip Cling Film",
+            "details": "Use beeswax wraps or containers with lids instead of cling film.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.05kg CO₂"
+        },
+        {
+            "title": "🧼 Use Shampoo Bar",
+            "details": "Use a solid shampoo bar instead of shampoo in plastic bottles.",
+            "points": 10,
+            "estimatedImpact": "Saves ~0.3kg CO₂"
+        },
+        {
+            "title": "📨 Opt for Digital Invoices",
+            "details": "Request e-invoices instead of paper bills.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.05kg CO₂"
+        }
+    ],
+    "Water": [
+        {
+            "title": "⏱️ Shorten Shower Time",
+            "details": "Try to keep your shower under 5 minutes today.",
+            "points": 15,
+            "estimatedImpact": "Saves ~0.5kg CO₂"
+        },
+        {
+            "title": "🪥 Turn Off Tap While Brushing",
+            "details": "Don't leave the tap running while brushing your teeth.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.1kg CO₂"
+        },
+        {
+            "title": "🔧 Fix Leaky Faucets",
+            "details": "A dripping tap wastes liters of water a day; fix it or get it fixed.",
+            "points": 10,
+            "estimatedImpact": "Saves ~0.3kg CO₂"
+        },
+        {
+            "title": "🌧️ Harvest Rainwater",
+            "details": "Collect rainwater to water the plants on your balcony.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.1kg CO₂"
+        },
+        {
+            "title": "🧼 Use Dishwasher",
+            "details": "The machine uses much less water than hand washing. Fill it up and run it.",
+            "points": 10,
+            "estimatedImpact": "Saves ~0.4kg CO₂"
+        },
+        {
+            "title": "🥬 Wash Veggies in a Bowl",
+            "details": "Wash vegetables in a bowl of water, not under running water.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.1kg CO₂"
+        },
+        {
+            "title": "🚽 Water Bottle in Cistern",
+            "details": "Place a filled water bottle in the toilet cistern to save water with every flush.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.1kg CO₂"
+        },
+        {
+            "title": "🚿 Collect Cold Shower Water",
+            "details": "Collect the cold water that runs while waiting for the shower to warm up and use it for cleaning.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.2kg CO₂"
+        }
+    ],
+    "Digital": [
+        {
+            "title": "📧 Clean Up Emails",
+            "details": "Deleting unnecessary emails and spam reduces server energy consumption.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.1kg CO₂"
+        },
+        {
+            "title": "🌙 Use Dark Mode",
+            "details": "Dark mode saves energy on OLED screens.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.05kg CO₂"
+        },
+        {
+            "title": "📉 Lower Video Quality",
+            "details": "Watch videos in 720p instead of 4K on your phone.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.2kg CO₂"
+        },
+        {
+            "title": "☁️ Manage Cloud Storage",
+            "details": "Delete unnecessary large files from the cloud to reduce data center load.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.1kg CO₂"
+        },
+        {
+            "title": "🔍 Navigate Directly",
+            "details": "Type the URL directly into the address bar instead of searching for sites you visit often.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.02kg CO₂"
+        }
+    ],
+    "Social": [
+        {
+            "title": "🌳 Join Tree Planting Event",
+            "details": "Physically participate in planting saplings or make a donation.",
+            "points": 100,
+            "estimatedImpact": "Saves ~10.0kg CO₂"
+        },
+        {
+            "title": "🎥 Watch Sustainability Doc",
+            "details": "Watch an environmental documentary to raise your awareness.",
+            "points": 10,
+            "estimatedImpact": "Saves ~0.5kg CO₂"
+        },
+        {
+            "title": "🗣️ Educate a Friend",
+            "details": "Share this app or an eco-tip with a friend.",
+            "points": 15,
+            "estimatedImpact": "Saves ~0.5kg CO₂"
+        },
+        {
+            "title": "📚 Read an Eco-Book",
+            "details": "Read an article or book about climate change or nature.",
+            "points": 10,
+            "estimatedImpact": "Saves ~0.3kg CO₂"
         }
     ]
 }
