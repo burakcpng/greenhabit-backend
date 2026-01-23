@@ -14,6 +14,7 @@ from task_templates import TASK_POOL
 
 from learning_content import LEARNING_ARTICLES
 from auth_system import AuthSystem, get_current_user # ✅ NEW Secure Auth
+from rate_limiter import check_rate_limit, check_toggle_cooldown  # ✅ Security: Rate Limiting
 
 app = FastAPI(
     title="GreenHabit API",
@@ -271,6 +272,9 @@ def create_task(
     user_id: str = Depends(get_current_user)
 ):
     try:
+        # ✅ SECURITY: Rate limit task creation (20/hour)
+        check_rate_limit(user_id, "task_create")
+        
         task_date = payload.date or date.today().isoformat()
         # user_id provided by Depends
         
@@ -314,7 +318,6 @@ def update_task(
     try:
         db = get_db()
         # user_id is now provided by Depends
-
         
         task = db.tasks.find_one({"id": task_id, "userId": user_id})
         
@@ -333,40 +336,69 @@ def update_task(
         if not update_data:
             raise HTTPException(status_code=400, detail="No fields to update")
         
+        # ✅ SECURITY: Check if this is a completion toggle
+        is_toggling_completion = "isCompleted" in update_data
+        
+        if is_toggling_completion:
+            # Rate limit task completions (30/min)
+            check_rate_limit(user_id, "task_complete")
+            
+            # Cooldown: Prevent rapid toggling of the same task (5 second minimum)
+            last_updated = task.get("updatedAt")
+            if last_updated:
+                check_toggle_cooldown(user_id, task_id, last_updated)
+        
         update_data["updatedAt"] = datetime.utcnow()
         
-        # Check if task is being completed
-        is_completing_task = "isCompleted" in update_data and update_data["isCompleted"] and not task.get("isCompleted", False)
+        # Check if task is being completed (not already completed)
+        is_completing_task = is_toggling_completion and update_data["isCompleted"] and not task.get("isCompleted", False)
         
-        # ✅ FIX 2: Race Condition Prevention - Atomic Update
-        # Only set completedAt if not already completed
+        # ✅ SECURITY: Atomic completion guard - prevents double completion race condition
         if is_completing_task:
-            if task.get("isCompleted", False):
-                 # Task was already completed by another request
-                 is_completing_task = False
+            update_data["completedAt"] = datetime.utcnow()
+            
+            # Atomic update: only update if still not completed
+            if "id" in task:
+                result = db.tasks.update_one(
+                    {"id": task_id, "userId": user_id, "isCompleted": False},
+                    {"$set": update_data}
+                )
             else:
-                 update_data["completedAt"] = datetime.utcnow()
-        
-        # Update task
-        if "id" in task:
-            result = db.tasks.update_one(
-                {"id": task_id, "userId": user_id},
-                {"$set": update_data}
-            )
+                result = db.tasks.update_one(
+                    {"_id": task["_id"], "userId": user_id, "isCompleted": False},
+                    {"$set": update_data}
+                )
+            
+            # If no document matched, task was already completed
+            if result.matched_count == 0:
+                return {
+                    "success": True,
+                    "message": "Task was already completed",
+                    "alreadyCompleted": True,
+                    "modified": False
+                }
         else:
-            result = db.tasks.update_one(
-                {"_id": task["_id"], "userId": user_id},
-                {"$set": update_data}
-            )
+            # Non-completion update (or uncompleting)
+            if "id" in task:
+                result = db.tasks.update_one(
+                    {"id": task_id, "userId": user_id},
+                    {"$set": update_data}
+                )
+            else:
+                result = db.tasks.update_one(
+                    {"_id": task["_id"], "userId": user_id},
+                    {"$set": update_data}
+                )
         
-        # ✅ NEW: If completing task, calculate rewards and check achievements
+        # Build response
         response = {
             "success": True,
             "message": "Task updated successfully",
             "modified": result.modified_count > 0
         }
         
-        if is_completing_task:
+        # If completing task, calculate rewards and check achievements
+        if is_completing_task and result.modified_count > 0:
             from rewards_system import calculate_rewards, check_new_achievements, calculate_streak
             
             # Calculate rewards

@@ -243,6 +243,19 @@ def invite_to_team(db, team_id: str, inviter_id: str, invitee_id: str) -> Dict:
     if team["creatorId"] != inviter_id:
         return {"success": False, "message": "Only the team creator can invite members"}
     
+    # ✅ SECURITY: Daily invitation limit (10/day) to prevent spam
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    daily_invites = db.team_invitations.count_documents({
+        "inviterId": inviter_id,
+        "createdAt": {"$gte": today_start}
+    })
+    
+    if daily_invites >= 10:
+        return {
+            "success": False, 
+            "message": "Daily invitation limit reached (10 per day). Please try again tomorrow."
+        }
+    
     # Check if invitee already in a team
     existing = db.team_members.find_one({"userId": invitee_id})
     if existing:

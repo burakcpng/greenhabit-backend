@@ -8,6 +8,9 @@ from typing import List, Dict, Optional
 from bson import ObjectId
 import re  # SECURITY: For escaping regex in search
 
+# ✅ SECURITY: Rate limiting for social actions
+from rate_limiter import check_user_rate, RateLimitExceeded
+
 # ======================== HELPER: Calculate Eco Score ========================
 
 def calculate_eco_score(db, user_id: str) -> int:
@@ -335,6 +338,15 @@ def follow_user(db, follower_id: str, followed_id: str) -> Dict:
             "message": "Cannot follow yourself"
         }
     
+    # ✅ SECURITY: Rate limit follows (30/hour)
+    try:
+        check_user_rate(follower_id, "follow")
+    except RateLimitExceeded:
+        return {
+            "success": False,
+            "message": "Too many follow requests. Please try again later."
+        }
+    
     # Check if already following
     existing = db.follows.find_one({
         "followerId": follower_id,
@@ -389,6 +401,15 @@ def unfollow_user(db, follower_id: str, followed_id: str) -> Dict:
     Unfollow a user
     Returns success status and updated counts
     """
+    # ✅ SECURITY: Rate limit unfollows (30/hour)
+    try:
+        check_user_rate(follower_id, "unfollow")
+    except RateLimitExceeded:
+        return {
+            "success": False,
+            "message": "Too many unfollow requests. Please try again later."
+        }
+    
     result = db.follows.delete_one({
         "followerId": follower_id,
         "followedId": followed_id
