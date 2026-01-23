@@ -25,12 +25,18 @@ app = FastAPI(
 
 api = APIRouter(prefix="/api")
 
+# SECURITY: Restrict CORS to legitimate origins only
+# For mobile-only API, we can be very restrictive
+ALLOWED_ORIGINS = os.getenv("CORS_ORIGINS", "").split(",")
+# Filter empty strings that result from empty env var
+ALLOWED_ORIGINS = [origin.strip() for origin in ALLOWED_ORIGINS if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,  # Empty list = no browser access (mobile-only)
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
+    allow_headers=["Authorization", "Content-Type", "X-User-Id"],
 )
 
 # ======================== GLOBAL DATABASE CLIENT ========================
@@ -897,11 +903,7 @@ def get_public_profile(
     """Get another user's public profile"""
     try:
         db = get_db()
-        viewer_id = None
-        try:
-            viewer_id = get_user_id(x_user_id)
-        except:
-            pass
+        viewer_id = user_id  # The authenticated user is the viewer
         
         from social_system import get_social_profile, get_user_rank
         
@@ -939,12 +941,11 @@ def get_public_profile(
 @api.post("/users/{target_id}/follow")
 def follow_user_endpoint(
     target_id: str,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Follow a user"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from social_system import follow_user
         
         result = follow_user(db, user_id, target_id)
@@ -961,12 +962,11 @@ def follow_user_endpoint(
 @api.delete("/users/{target_id}/follow")
 def unfollow_user_endpoint(
     target_id: str,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Unfollow a user"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from social_system import unfollow_user
         
         result = unfollow_user(db, user_id, target_id)
@@ -1017,11 +1017,10 @@ def get_following_endpoint(
 # --- Privacy Settings Endpoints ---
 
 @api.get("/social/privacy")
-def get_privacy_endpoint(x_user_id: Optional[str] = Header(None)):
+def get_privacy_endpoint(user_id: str = Depends(get_current_user)):
     """Get current user's privacy settings"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from social_system import get_privacy_settings
         
         return get_privacy_settings(db, user_id)
@@ -1033,12 +1032,11 @@ def get_privacy_endpoint(x_user_id: Optional[str] = Header(None)):
 @api.patch("/social/privacy")
 def update_privacy_endpoint(
     payload: PrivacySettingsPayload,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Update user's privacy settings"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from social_system import update_privacy_settings
         
         settings = payload.dict(exclude_unset=True)
@@ -1062,12 +1060,11 @@ class TaskSharePayload(BaseModel):
 @api.post("/shares")
 def create_share(
     payload: TaskSharePayload,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Send a task to a friend"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from task_sharing import create_task_share
         
         task_data = {
@@ -1092,12 +1089,11 @@ def create_share(
 @api.get("/shares/incoming")
 def get_incoming(
     status: Optional[str] = Query("pending"),
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Get incoming task shares"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from task_sharing import get_incoming_shares
         
         shares = get_incoming_shares(db, user_id, status)
@@ -1108,11 +1104,10 @@ def get_incoming(
         raise HTTPException(status_code=500, detail=f"Failed to fetch shares: {str(e)}")
 
 @api.get("/shares/sent")
-def get_sent(x_user_id: Optional[str] = Header(None)):
+def get_sent(user_id: str = Depends(get_current_user)):
     """Get sent task shares"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from task_sharing import get_sent_shares
         
         shares = get_sent_shares(db, user_id)
@@ -1123,11 +1118,10 @@ def get_sent(x_user_id: Optional[str] = Header(None)):
         raise HTTPException(status_code=500, detail=f"Failed to fetch shares: {str(e)}")
 
 @api.get("/shares/pending-count")
-def get_pending(x_user_id: Optional[str] = Header(None)):
+def get_pending(user_id: str = Depends(get_current_user)):
     """Get count of pending incoming shares"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from task_sharing import get_pending_count
         
         count = get_pending_count(db, user_id)
@@ -1140,12 +1134,11 @@ def get_pending(x_user_id: Optional[str] = Header(None)):
 @api.patch("/shares/{share_id}/accept")
 def accept_share_endpoint(
     share_id: str,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Accept a shared task"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from task_sharing import accept_share
         
         result = accept_share(db, share_id, user_id)
@@ -1162,12 +1155,11 @@ def accept_share_endpoint(
 @api.patch("/shares/{share_id}/reject")
 def reject_share_endpoint(
     share_id: str,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Reject a shared task"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from task_sharing import reject_share
         
         result = reject_share(db, share_id, user_id)
@@ -1203,12 +1195,11 @@ class ShareTaskToTeamPayload(BaseModel):
 @api.post("/teams")
 def create_team_endpoint(
     payload: CreateTeamPayload,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Create a new team"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from team_system import create_team, get_my_team, get_team_members
         
         result = create_team(db, user_id, payload.name, payload.invitedUserIds)
@@ -1226,11 +1217,10 @@ def create_team_endpoint(
         raise HTTPException(status_code=500, detail=f"Failed to create team: {str(e)}")
 
 @api.get("/teams/my")
-def get_my_team_endpoint(x_user_id: Optional[str] = Header(None)):
+def get_my_team_endpoint(user_id: str = Depends(get_current_user)):
     """Get current user's team"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from team_system import get_my_team, get_team_members
         
         team = get_my_team(db, user_id)
@@ -1249,12 +1239,11 @@ def get_my_team_endpoint(x_user_id: Optional[str] = Header(None)):
 @api.get("/teams/{team_id}")
 def get_team_endpoint(
     team_id: str,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Get team by ID"""
     try:
         db = get_db()
-        get_user_id(x_user_id)  # Validate user
         from team_system import get_team, get_team_members
         
         team = get_team(db, team_id)
@@ -1274,12 +1263,11 @@ def get_team_endpoint(
 @api.delete("/teams/{team_id}")
 def delete_team_endpoint(
     team_id: str,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Delete team (creator only)"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from team_system import delete_team
         
         result = delete_team(db, team_id, user_id)
@@ -1296,12 +1284,11 @@ def delete_team_endpoint(
 @api.post("/teams/{team_id}/leave")
 def leave_team_endpoint(
     team_id: str,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Leave team (members only)"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from team_system import leave_team
         
         result = leave_team(db, team_id, user_id)
@@ -1321,12 +1308,11 @@ def leave_team_endpoint(
 def remove_member_endpoint(
     team_id: str,
     target_user_id: str,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Remove member from team (creator only)"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from team_system import remove_member
         
         result = remove_member(db, team_id, user_id, target_user_id)
@@ -1350,12 +1336,11 @@ def update_member_permissions_endpoint(
     team_id: str,
     target_user_id: str,
     payload: UpdateMemberPermissionsPayload,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Update member permissions (creator only)"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from team_system import update_member_permissions
         
         result = update_member_permissions(
@@ -1381,12 +1366,11 @@ def update_member_permissions_endpoint(
 def invite_to_team_endpoint(
     team_id: str,
     payload: InviteToTeamPayload,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Invite user to team (creator only)"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from team_system import invite_to_team
         
         result = invite_to_team(db, team_id, user_id, payload.userId)
@@ -1401,11 +1385,10 @@ def invite_to_team_endpoint(
         raise HTTPException(status_code=500, detail=f"Failed to invite user: {str(e)}")
 
 @api.get("/teams/invitations/incoming")
-def get_pending_invitations_endpoint(x_user_id: Optional[str] = Header(None)):
+def get_pending_invitations_endpoint(user_id: str = Depends(get_current_user)):
     """Get pending team invitations for current user"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from team_system import get_pending_invitations
         
         invitations = get_pending_invitations(db, user_id)
@@ -1416,11 +1399,10 @@ def get_pending_invitations_endpoint(x_user_id: Optional[str] = Header(None)):
         raise HTTPException(status_code=500, detail=f"Failed to get invitations: {str(e)}")
 
 @api.get("/teams/invitations/sent")
-def get_sent_invitations_endpoint(x_user_id: Optional[str] = Header(None)):
+def get_sent_invitations_endpoint(user_id: str = Depends(get_current_user)):
     """Get team invitations sent by current user (outgoing)"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from team_system import get_sent_invitations
         
         invitations = get_sent_invitations(db, user_id)
@@ -1433,12 +1415,11 @@ def get_sent_invitations_endpoint(x_user_id: Optional[str] = Header(None)):
 @api.patch("/teams/invitations/{invitation_id}/accept")
 def accept_invitation_endpoint(
     invitation_id: str,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Accept team invitation"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from team_system import accept_invitation
         
         result = accept_invitation(db, invitation_id, user_id)
@@ -1455,12 +1436,11 @@ def accept_invitation_endpoint(
 @api.patch("/teams/invitations/{invitation_id}/reject")
 def reject_invitation_endpoint(
     invitation_id: str,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Reject team invitation"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from team_system import reject_invitation
         
         result = reject_invitation(db, invitation_id, user_id)
@@ -1480,12 +1460,11 @@ def reject_invitation_endpoint(
 def share_task_to_team_endpoint(
     team_id: str,
     payload: ShareTaskToTeamPayload,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Share task to all team members (creator only)"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from team_system import share_task_to_team
         
         task_data = {
@@ -1508,11 +1487,10 @@ def share_task_to_team_endpoint(
         raise HTTPException(status_code=500, detail=f"Failed to share task: {str(e)}")
 
 @api.get("/teams/tasks/incoming")
-def get_pending_team_tasks_endpoint(x_user_id: Optional[str] = Header(None)):
+def get_pending_team_tasks_endpoint(user_id: str = Depends(get_current_user)):
     """Get pending team task shares for current user"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from team_system import get_pending_team_tasks
         
         tasks = get_pending_team_tasks(db, user_id)
@@ -1525,12 +1503,11 @@ def get_pending_team_tasks_endpoint(x_user_id: Optional[str] = Header(None)):
 @api.patch("/teams/tasks/{share_id}/accept")
 def accept_team_task_endpoint(
     share_id: str,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Accept team task share"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from team_system import accept_team_task
         
         result = accept_team_task(db, share_id, user_id)
@@ -1547,12 +1524,11 @@ def accept_team_task_endpoint(
 @api.patch("/teams/tasks/{share_id}/reject")
 def reject_team_task_endpoint(
     share_id: str,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Reject team task share"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from team_system import reject_team_task
         
         result = reject_team_task(db, share_id, user_id)
@@ -1571,12 +1547,11 @@ def reject_team_task_endpoint(
 @api.get("/teams/{team_id}/stats")
 def get_team_stats_endpoint(
     team_id: str,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Get team statistics"""
     try:
         db = get_db()
-        get_user_id(x_user_id)  # Validate user
         from team_system import get_team_stats
         
         stats = get_team_stats(db, team_id)
@@ -1592,12 +1567,11 @@ def get_team_stats_endpoint(
 @api.get("/teams/{team_id}/leaderboard")
 def get_team_leaderboard_endpoint(
     team_id: str,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Get team leaderboard"""
     try:
         db = get_db()
-        get_user_id(x_user_id)  # Validate user
         from team_system import get_team_leaderboard
         
         leaderboard = get_team_leaderboard(db, team_id)
@@ -1614,17 +1588,11 @@ def get_team_leaderboard_endpoint(
 def search_users_endpoint(
     query: str = Query(..., min_length=2, max_length=100),
     limit: int = Query(20, ge=1, le=50),
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Search for users by display name"""
     try:
         db = get_db()
-        user_id = None
-        try:
-            user_id = get_user_id(x_user_id)
-        except:
-            pass
-        
         from social_system import search_users
         
         users = search_users(db, query, limit, user_id)
@@ -1639,12 +1607,11 @@ def search_users_endpoint(
 def get_calendar_endpoint(
     year: int,
     month: int,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Get daily task completion data for a specific month"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         
         if month < 1 or month > 12:
             raise HTTPException(status_code=400, detail="Invalid month")
@@ -1670,12 +1637,11 @@ class BulkDeletePayload(BaseModel):
 def export_tasks_endpoint(
     year: int = Query(...),
     month: int = Query(...),
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Get all completed tasks for export (PDF generation)"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         
         if month < 1 or month > 12:
             raise HTTPException(status_code=400, detail="Invalid month")
@@ -1707,12 +1673,11 @@ def export_tasks_endpoint(
 @api.delete("/tasks/bulk-delete")
 def bulk_delete_tasks_endpoint(
     payload: BulkDeletePayload,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Delete multiple tasks after export confirmation"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         
         if not payload.taskIds:
             raise HTTPException(status_code=400, detail="No task IDs provided")
@@ -1740,12 +1705,11 @@ class DeviceTokenPayload(BaseModel):
 @api.post("/notifications/register-token")
 def register_token_endpoint(
     payload: DeviceTokenPayload,
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
     """Register device token for push notifications"""
     try:
         db = get_db()
-        user_id = get_user_id(x_user_id)
         from notification_system import register_device_token
         
         return register_device_token(db, user_id, payload.token, payload.platform)

@@ -10,8 +10,10 @@ import base64
 import json
 
 # Configuration
-# Ideally these should be in environment variables
-JWT_SECRET = os.getenv("JWT_SECRET", "change_this_to_a_secure_random_secret_in_production")
+# SECURITY: All secrets MUST be provided via environment variables
+JWT_SECRET = os.getenv("JWT_SECRET")
+if not JWT_SECRET:
+    raise RuntimeError("CRITICAL: JWT_SECRET environment variable is not set. Cannot start server.")
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 30
 APPLE_PUBLIC_KEYS_URL = "https://appleid.apple.com/auth/keys"
@@ -124,23 +126,21 @@ class AuthSystem:
 # Dependency for FastAPI Routes
 def get_current_user(
     authorization: str = Header(None),
-    x_user_id: str = Header(None) # Fallback for backward compatibility/migration
+    x_user_id: str = Header(None)  # Kept for migration logging only
 ) -> str:
     """
     Dependency to authenticate requests.
-    Prioritizes Bearer Token (Secure).
-    Falls back to X-User-Id (Legacy/Insecure) ONLY if specified in config (Deprecated).
+    SECURITY: Only Bearer Token authentication is accepted.
     """
     
-    # 1. Check for Bearer Token (Preferred)
+    # Check for Bearer Token (Required)
     if authorization and authorization.startswith("Bearer "):
         token = authorization.split(" ")[1]
         return AuthSystem.verify_session_token(token)
     
-    # 2. Legacy Fallback (Temporary Migration Phase)
-    # WARNING: This should be disabled after migration is complete
+    # Log legacy attempts for migration monitoring (but reject them)
     if x_user_id:
-        # We allow this for now, but in strict mode we would reject it
-        return x_user_id
+        print(f"⚠️ SECURITY: Rejected legacy X-User-Id auth attempt: {x_user_id[:8]}...")
+    
+    raise HTTPException(status_code=401, detail="Authentication required. Please sign in with Apple.")
 
-    raise HTTPException(status_code=401, detail="Authentication required")

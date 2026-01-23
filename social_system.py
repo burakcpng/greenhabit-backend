@@ -6,6 +6,7 @@ Handles follows, rankings, and social profiles
 from datetime import datetime, date, timedelta
 from typing import List, Dict, Optional
 from bson import ObjectId
+import re  # SECURITY: For escaping regex in search
 
 # ======================== HELPER: Calculate Eco Score ========================
 
@@ -563,9 +564,12 @@ def search_users(db, query: str, limit: int = 20, exclude_user_id: Optional[str]
     if not query or len(query) < 2:
         return []
     
-    # Build match filter
+    # SECURITY: Escape regex special characters to prevent injection/ReDoS
+    safe_query = re.escape(query)
+    
+    # Build match filter with sanitized query
     match_filter = {
-        "displayName": {"$regex": query, "$options": "i"}
+        "displayName": {"$regex": safe_query, "$options": "i"}
     }
     
     # Exclude current user if provided
