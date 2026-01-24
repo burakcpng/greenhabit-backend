@@ -87,6 +87,11 @@ def get_my_team(db, user_id: str) -> Optional[Dict]:
     if not team:
         return None
     
+    # ✅ FIX: Fetch creator's current displayName (not cached value)
+    creator_profile = db.user_profiles.find_one({"userId": team["creatorId"]})
+    if creator_profile:
+        team["creatorName"] = creator_profile.get("displayName", "GreenHabit User")
+    
     team = sanitize_team_doc(team)
     team["myRole"] = membership["role"]
     
