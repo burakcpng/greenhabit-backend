@@ -568,7 +568,7 @@ async def get_preferences(user_id: str = Depends(get_current_user)):
             prefs = {
                 "userId": user_id,
                 "country": "EU",
-                "interests": ["Energy", "Water", "Waste", "Transport"],
+                "interests": ["Energy", "Water", "Waste", "Transport", "Food", "Digital", "Social"],
                 "language": "en"
             }
             db.preferences.insert_one(prefs)
@@ -646,10 +646,10 @@ async def generate_ai_tasks():
     """Generate random eco-friendly tasks from different categories"""
     today = date.today().isoformat()
     
-    # Generate 3-4 random tasks
-    all_categories = ["Energy", "Water", "Waste", "Transport"]
+    # Generate 3-4 random tasks from ALL categories
+    all_categories = list(TASK_POOL.keys())  # Dynamic: ["Transport", "Energy", "Food", "Waste", "Water", "Digital", "Social"]
     num_tasks = random.randint(3, 4)
-    selected_categories = random.sample(all_categories, k=num_tasks)
+    selected_categories = random.sample(all_categories, k=min(num_tasks, len(all_categories)))
     
     generated_tasks = []
     
