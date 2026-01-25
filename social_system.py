@@ -775,11 +775,16 @@ def bulk_delete_tasks(db, user_id: str, task_ids: List[str]) -> Dict:
             except:
                 pass
         
-        # Delete only user's tasks
+        # Delete only user's tasks - match by EITHER _id (ObjectId) OR custom id (UUID string)
+        # Export returns custom id when present, so we need to check both
         result = db.tasks.delete_many({
-            "_id": {"$in": object_ids},
-            "userId": user_id
+            "userId": user_id,
+            "$or": [
+                {"_id": {"$in": object_ids}},  # Match by MongoDB _id
+                {"id": {"$in": task_ids}}       # Match by custom id field
+            ]
         })
+
         
         return {
             "success": True,
