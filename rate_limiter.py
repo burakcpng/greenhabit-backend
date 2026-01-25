@@ -25,7 +25,9 @@ RATE_LIMITS = {
 }
 
 # Toggle cooldown: minimum seconds between toggling the same task
-TASK_TOGGLE_COOLDOWN_SECONDS = 5
+# ✅ ULTRATHINK FIX: Reduced from 5s to 0.5s - 5 seconds was too long and caused 429 errors
+TASK_TOGGLE_COOLDOWN_SECONDS = 0.5
+
 
 
 # ======================== IN-MEMORY STORAGE ========================
