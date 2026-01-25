@@ -422,6 +422,34 @@ def update_task(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update task: {str(e)}")
 
+
+# ✅ ULTRATHINK FIX: Bulk-delete MUST be defined BEFORE /{task_id} to prevent route shadowing
+# FastAPI matches routes in definition order - "bulk-delete" would be matched as task_id otherwise
+@api.delete("/tasks/bulk-delete")
+def bulk_delete_tasks_endpoint(
+    payload: BulkDeletePayload,
+    user_id: str = Depends(get_current_user)
+):
+    """Delete multiple tasks after export confirmation"""
+    try:
+        db = get_db()
+        
+        if not payload.taskIds:
+            raise HTTPException(status_code=400, detail="No task IDs provided")
+        
+        from social_system import bulk_delete_tasks
+        
+        result = bulk_delete_tasks(db, user_id, payload.taskIds)
+        
+        # ✅ ULTRATHINK: Never return 404 for bulk operations
+        # Always return 200 with success/failure info in response body
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete tasks: {str(e)}")
+
 @api.delete("/tasks/{task_id}")
 def delete_task(
     task_id: str,
@@ -1702,31 +1730,7 @@ def export_tasks_endpoint(
         raise HTTPException(status_code=500, detail=f"Failed to export tasks: {str(e)}")
 
 
-@api.delete("/tasks/bulk-delete")
-def bulk_delete_tasks_endpoint(
-    payload: BulkDeletePayload,
-    user_id: str = Depends(get_current_user)
-):
-    """Delete multiple tasks after export confirmation"""
-    try:
-        db = get_db()
-        
-        if not payload.taskIds:
-            raise HTTPException(status_code=400, detail="No task IDs provided")
-        
-        from social_system import bulk_delete_tasks
-        
-        result = bulk_delete_tasks(db, user_id, payload.taskIds)
-        
-        if not result["success"]:
-            raise HTTPException(status_code=400, detail=result["message"])
-        
-        return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete tasks: {str(e)}")
-
+# NOTE: bulk-delete endpoint moved to line 425 (before /tasks/{task_id}) to fix route shadowing
 
 # ======================== NOTIFICATION ROUTES ========================
 
