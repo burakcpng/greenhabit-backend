@@ -425,7 +425,13 @@ def update_task(
 
 # ✅ ULTRATHINK FIX: Bulk-delete MUST be defined BEFORE /{task_id} to prevent route shadowing
 # FastAPI matches routes in definition order - "bulk-delete" would be matched as task_id otherwise
+
+# Payload class moved here (must be defined before use)
+class BulkDeletePayload(BaseModel):
+    taskIds: List[str]
+
 @api.delete("/tasks/bulk-delete")
+
 def bulk_delete_tasks_endpoint(
     payload: BulkDeletePayload,
     user_id: str = Depends(get_current_user)
@@ -1688,10 +1694,11 @@ def get_calendar_endpoint(
         raise HTTPException(status_code=500, detail=f"Failed to get calendar data: {str(e)}")
 
 
-# ======================== EXPORT DATA ROUTES ========================
 
-class BulkDeletePayload(BaseModel):
-    taskIds: List[str]
+
+# ======================== EXPORT DATA ROUTES ========================
+# NOTE: BulkDeletePayload class moved to line 430 (before bulk-delete endpoint)
+
 
 @api.get("/tasks/export")
 def export_tasks_endpoint(
