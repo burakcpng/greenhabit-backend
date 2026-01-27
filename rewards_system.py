@@ -106,6 +106,41 @@ ACHIEVEMENTS = {
         "description": "30 day streak",
         "icon": "🔥",
         "points": 150
+    },
+    "social_butterfly": {
+        "id": "social_butterfly",
+        "name": "🦋 Social Butterfly",
+        "description": "Send 5 invitations",
+        "icon": "🦋",
+        "points": 40
+    },
+    "team_player": {
+        "id": "team_player",
+        "name": "🤝 Team Player",
+        "description": "Join a team",
+        "icon": "🤝",
+        "points": 30
+    },
+    "night_owl": {
+        "id": "night_owl",
+        "name": "🦉 Night Owl",
+        "description": "Complete a task after 10 PM",
+        "icon": "🦉",
+        "points": 20
+    },
+    "weekend_warrior": {
+        "id": "weekend_warrior",
+        "name": "🎉 Weekend Warrior",
+        "description": "Complete tasks on Sat & Sun",
+        "icon": "🎉",
+        "points": 40
+    },
+    "eco_generalist": {
+        "id": "eco_generalist",
+        "name": "🌍 Eco Generalist",
+        "description": "Complete a task in all 7 categories",
+        "icon": "🌍",
+        "points": 75
     }
 }
 
@@ -265,6 +300,9 @@ def check_new_achievements(db, user_id: str) -> List[Dict]:
     waste_tasks = sum(1 for t in user_tasks if t.get("category") == "Waste")
     transport_tasks = sum(1 for t in user_tasks if t.get("category") == "Transport")
     
+    # Check distinct categories
+    unique_categories = {t.get("category") for t in user_tasks if t.get("category")}
+    
     # Check today's tasks for perfect day
     today = date.today().isoformat()
     today_tasks_list = [t for t in user_tasks if t.get("date") == today]
@@ -287,6 +325,22 @@ def check_new_achievements(db, user_id: str) -> List[Dict]:
             return datetime.fromisoformat(str(completed_at).replace("Z", "")).hour
         except:
             return 12
+            
+    # Helper for days of week
+    def _get_weekday(date_str) -> int:
+        """Get weekday from date string (0=Mon, 6=Sun)"""
+        try:
+            return date.fromisoformat(date_str).weekday()
+        except:
+            return 0
+            
+    has_sat = any(_get_weekday(t.get("date")) == 5 for t in user_tasks)
+    has_sun = any(_get_weekday(t.get("date")) == 6 for t in user_tasks)
+            
+    # Additional DB Checks for Social Achievements
+    invites_sent = db.invitations.count_documents({"senderId": user_id})
+    # Check if user is in any team (is a member of any team doc)
+    is_in_team = db.teams.count_documents({"members.userId": user_id}) > 0
     
     checks = {
         "first_task": total_tasks >= 1,
@@ -302,7 +356,12 @@ def check_new_achievements(db, user_id: str) -> List[Dict]:
         "streak_7": current_streak >= 7,
         "streak_30": current_streak >= 30,
         "week_warrior": current_streak >= 7,
-        "early_bird": any(_get_hour(t.get("completedAt")) < 9 for t in user_tasks if t.get("completedAt"))
+        "early_bird": any(_get_hour(t.get("completedAt")) < 9 for t in user_tasks if t.get("completedAt")),
+        "social_butterfly": invites_sent >= 5,
+        "team_player": is_in_team,
+        "night_owl": any(_get_hour(t.get("completedAt")) >= 22 for t in user_tasks if t.get("completedAt")),
+        "weekend_warrior": has_sat and has_sun,
+        "eco_generalist": len(unique_categories) >= 7
     }
     
     # Find new achievements
