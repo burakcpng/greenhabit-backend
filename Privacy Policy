@@ -1,0 +1,42 @@
+# PRIVACY POLICY
+
+## 1. Information We Collect
+**1.1 Information You Provide:**
+- **Identity Data**: Name and Email from Apple (via Sign in with Apple).
+- **Profile Data**: Display Name, Bio, and Country Preference.
+- **Activity Data**: Habits logged and dates of completion.
+- **User Content**: Photos uploaded as "Evidence" for task completion.
+
+**1.2 Automatically Collected Information:**
+- **Analytics Data**: We use Apple’s native App Store Connect Analytics to collect anonymous usage data (e.g., app installations, crashes, and session frequency). This data is aggregated by Apple and does not identify individual users.
+- **Device Data**: Basic device model and OS version for crash logging and support.
+- **No Third-Party Tracking**: We do not use any third-party tracking or analytics SDKs (such as Google Analytics or Mixpanel).
+
+## 2. How We Use Your Information
+- **Service Provision**: To track your habits and calculate your Eco Score.
+- **Social Features**: Your teammates can see your Task Logs and Photo Evidence.
+- **Notifications**: To send reminders and team updates via APNS.
+
+## 3. Data Sharing & Visibility
+**3.1 Public Visibility**: Your Profile is visible in Search/Leaderboards unless you toggle "Private Profile" in Settings.
+
+**3.2 Team Visibility**: When you join a Team, members can see your contribution and shared photos.
+
+**3.3 Third Parties**: We do not sell your personal data. We use **MongoDB Atlas** for secure, encrypted cloud storage.
+
+## 4. Data Retention & Deletion
+**4.1 Deletion**: You may delete your account via `Settings > Profile > Delete Account`. This permanently wipes your profile and anonymizes historical logs.
+
+## 5. Security
+We use industry-standard security measures, including TLS/SSL encryption in transit and **JWT (JSON Web Tokens)** for secure authentication.
+
+## 6. Children's Privacy
+GreenHabit is not directed at children under the age of 13.
+
+## 7. Contact Us
+If you have questions about these Terms or Privacy Policy, please contact us at:
+
+**Developer**: Burak Çapanoğlu
+**Email**: burakcpnoglu01@gmail.com
+**Location**: Istanbul, Turkey
+"""
