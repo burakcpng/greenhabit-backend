@@ -809,6 +809,63 @@ def get_streak(user_id: str = Depends(get_current_user)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch streak: {str(e)}")
 
+# ======================== USER ACCOUNT DELETION ========================
+
+@api.delete("/user/delete")
+def delete_user_account(user_id: str = Depends(get_current_user)):
+    """
+    Delete user account and ALL associated data.
+    ✅ CRITICAL: Cascading deletion of ALL user-related documents.
+    Apple Guideline 5.1.1(v) compliance: Full account deletion support.
+    """
+    try:
+        db = get_db()
+        
+        print(f"🗑️ Starting account deletion for user: {user_id}")
+        
+        # 1. Delete all tasks
+        tasks_result = db.tasks.delete_many({"userId": user_id})
+        print(f"   - Deleted {tasks_result.deleted_count} tasks")
+        
+        # 2. Delete preferences
+        prefs_result = db.preferences.delete_many({"userId": user_id})
+        print(f"   - Deleted {prefs_result.deleted_count} preferences")
+        
+        # 3. Handle team memberships
+        from team_system import handle_user_deletion_teams
+        team_cleanup = handle_user_deletion_teams(db, user_id)
+        print(f"   - Team cleanup: {team_cleanup}")
+        
+        # 4. Delete social connections
+        from social_system import handle_user_deletion_social
+        social_cleanup = handle_user_deletion_social(db, user_id)
+        print(f"   - Social cleanup: {social_cleanup}")
+        
+        # 5. Delete device tokens (APNS)
+        tokens_result = db.device_tokens.delete_many({"userId": user_id})
+        print(f"   - Deleted {tokens_result.deleted_count} device tokens")
+        
+        # 6. Delete user record (Apple ID mapping)
+        user_result = db.users.delete_one({"userId": user_id})
+        print(f"   - Deleted {user_result.deleted_count} user records")
+        
+        print(f"✅ Account deletion complete for: {user_id}")
+        
+        return {
+            "success": True,
+            "message": "Account and all data deleted successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Account deletion failed: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to delete account: {str(e)}"
+        )
+
+
 # ======================== NEW: SHARING ROUTES ========================
 
 class ShareTaskPayload(BaseModel):

@@ -713,3 +713,56 @@ def ensure_team_indexes(db):
         print("✅ Team system indexes created")
     except Exception as e:
         print(f"⚠️ Team index creation warning: {e}")
+
+
+# ======================== USER DELETION CLEANUP ========================
+
+def handle_user_deletion_teams(db, user_id: str) -> Dict:
+    """
+    Handle team cleanup when user deletes account.
+    
+    Rules:
+    1. If user is a team creator → Disband team (delete team + remove all members)
+    2. If user is a member → Remove from team
+    3. Delete all pending invitations (sent + received)
+    """
+    try:
+        # Find teams where user is creator
+        creator_teams = list(db.teams.find({"creatorId": user_id}))
+        
+        # Delete teams created by this user
+        for team in creator_teams:
+            team_id = team.get("id") or str(team["_id"])
+            # This will also remove all members
+            db.teams.delete_one({"_id": team["_id"]})
+            db.team_members.delete_many({"teamId": team_id})
+            print(f"   - Disbanded team: {team.get('name', 'Unknown')}")
+        
+        # Remove user from teams where they are a member (not creator)
+        db.team_members.delete_many({"userId": user_id})
+        
+        # Delete pending invitations (sent + received)
+        invitations_result = db.team_invitations.delete_many({
+            "$or": [
+                {"inviterId": user_id},
+                {"inviteeId": user_id}
+            ]
+        })
+        
+        # Delete pending team tasks (shared by user or pending for user)
+        tasks_result = db.team_task_shares.delete_many({
+            "$or": [
+                {"senderId": user_id},
+                {"recipientId": user_id}
+            ]
+        })
+        
+        return {
+            "teams_disbanded": len(creator_teams),
+            "invitations_deleted": invitations_result.deleted_count,
+            "shared_tasks_deleted": tasks_result.deleted_count
+        }
+        
+    except Exception as e:
+        print(f"❌ Team cleanup failed: {e}")
+        return {"error": str(e)}

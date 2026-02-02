@@ -799,3 +799,41 @@ def bulk_delete_tasks(db, user_id: str, task_ids: List[str]) -> Dict:
             "message": str(e)
         }
 
+
+
+
+# ======================== USER DELETION CLEANUP ========================
+
+def handle_user_deletion_social(db, user_id: str) -> Dict:
+    """
+    Handle social cleanup when user deletes account.
+    
+    Removes:
+    1. User's social profile
+    2. Follow relationships (as follower + as following)
+    3. Privacy settings
+    """
+    try:
+        # Delete social profile
+        profile_result = db.user_profiles.delete_one({"userId": user_id})
+        
+        # Remove from followers/following
+        follows_result = db.follows.delete_many({
+            "$or": [
+                {"followerId": user_id},
+                {"followedId": user_id}
+            ]
+        })
+        
+        # Delete privacy settings
+        db.user_privacy.delete_one({"userId": user_id})
+        
+        return {
+            "profile_deleted": profile_result.deleted_count,
+            "follows_removed": follows_result.deleted_count
+        }
+        
+    except Exception as e:
+        print(f"❌ Social cleanup failed: {e}")
+        return {"error": str(e)}
+
