@@ -42,6 +42,19 @@ def calculate_total_co2_saved(db, user_id: str) -> float:
     return round(count * 0.3, 2)
 
 
+# ======================== BLOCKED USERS HELPER ========================
+
+def get_blocked_users(db, user_id: str) -> List[str]:
+    """
+    Get list of user IDs blocked by the current user.
+    Used to filter blocked users from social queries.
+    """
+    user = db.users.find_one({"userId": user_id})
+    if user:
+        return user.get("blockedUsers", [])
+    return []
+
+
 # ======================== USER PROFILE EXTENSION ========================
 
 def get_social_profile(db, user_id: str, viewer_id: Optional[str] = None) -> Dict:
@@ -210,11 +223,16 @@ def update_user_profile(db, user_id: str, display_name: Optional[str], bio: Opti
 
 # ======================== RANKING SYSTEM ========================
 
-def get_global_ranking(db, limit: int = 50) -> Dict:
+def get_global_ranking(db, limit: int = 50, viewer_id: Optional[str] = None) -> Dict:
     """
     Get global leaderboard sorted by eco score
     Returns top N users with rank, points, etc.
+    
+    Apple Guideline 1.2: Blocked users are filtered from the viewer's perspective.
     """
+    # Get blocked users list for filtering
+    blocked_users = get_blocked_users(db, viewer_id) if viewer_id else []
+    
     # Get all users with their eco scores
     pipeline = [
         {"$match": {"isCompleted": True}},
@@ -234,6 +252,10 @@ def get_global_ranking(db, limit: int = 50) -> Dict:
     for profile in profiles:
         user_id = profile.get("userId")
         if not user_id:
+            continue
+        
+        # Apple Guideline 1.2: Skip blocked users
+        if user_id in blocked_users:
             continue
         
         # Check if user wants to appear in leaderboard
@@ -433,16 +455,24 @@ def unfollow_user(db, follower_id: str, followed_id: str) -> Dict:
     }
 
 
-def get_followers(db, user_id: str, page: int = 1, limit: int = 20) -> Dict:
+def get_followers(db, user_id: str, page: int = 1, limit: int = 20, viewer_id: Optional[str] = None) -> Dict:
     """
-    Get list of users following this user
+    Get list of users following this user.
+    
+    Apple Guideline 1.2: Blocked users are filtered from the viewer's perspective.
     """
     skip = (page - 1) * limit
     
+    # Get blocked users list for filtering
+    blocked_users = get_blocked_users(db, viewer_id) if viewer_id else []
+    
+    # Build query with blocked user filter
+    query = {"followedId": user_id}
+    if blocked_users:
+        query["followerId"] = {"$nin": blocked_users}
+    
     # Get follower relationships
-    follows = list(db.follows.find(
-        {"followedId": user_id}
-    ).sort("createdAt", -1).skip(skip).limit(limit + 1))
+    follows = list(db.follows.find(query).sort("createdAt", -1).skip(skip).limit(limit + 1))
     
     has_more = len(follows) > limit
     follows = follows[:limit]
@@ -475,16 +505,24 @@ def get_followers(db, user_id: str, page: int = 1, limit: int = 20) -> Dict:
     }
 
 
-def get_following(db, user_id: str, page: int = 1, limit: int = 20) -> Dict:
+def get_following(db, user_id: str, page: int = 1, limit: int = 20, viewer_id: Optional[str] = None) -> Dict:
     """
-    Get list of users this user is following
+    Get list of users this user is following.
+    
+    Apple Guideline 1.2: Blocked users are filtered from the viewer's perspective.
     """
     skip = (page - 1) * limit
     
+    # Get blocked users list for filtering
+    blocked_users = get_blocked_users(db, viewer_id) if viewer_id else []
+    
+    # Build query with blocked user filter
+    query = {"followerId": user_id}
+    if blocked_users:
+        query["followedId"] = {"$nin": blocked_users}
+    
     # Get following relationships
-    follows = list(db.follows.find(
-        {"followerId": user_id}
-    ).sort("createdAt", -1).skip(skip).limit(limit + 1))
+    follows = list(db.follows.find(query).sort("createdAt", -1).skip(skip).limit(limit + 1))
     
     has_more = len(follows) > limit
     follows = follows[:limit]
@@ -572,6 +610,14 @@ def ensure_social_indexes(db):
     db.user_profiles.create_index([("totalPoints", -1)])
     db.user_profiles.create_index([("displayName", 1)])
     
+    # Reports indexes (Apple Guideline 1.2 Compliance)
+    db.reports.create_index([("reporterId", 1)])
+    db.reports.create_index([("reportedUserId", 1)])
+    db.reports.create_index([("status", 1), ("createdAt", -1)])
+    
+    # Users blockedUsers index
+    db.users.create_index([("userId", 1)], unique=True)
+    
     print("✅ Social indexes created")
 
 
@@ -581,6 +627,7 @@ def search_users(db, query: str, limit: int = 20, exclude_user_id: Optional[str]
     """
     Search for users by display name
     Returns list of matching users with basic profile info
+    Filters out users blocked by the searcher.
     """
     if not query or len(query) < 2:
         return []
@@ -596,6 +643,11 @@ def search_users(db, query: str, limit: int = 20, exclude_user_id: Optional[str]
     # Exclude current user if provided
     if exclude_user_id:
         match_filter["userId"] = {"$ne": exclude_user_id}
+        
+        # Also exclude users blocked by the searcher
+        blocked_users = get_blocked_users(db, exclude_user_id)
+        if blocked_users:
+            match_filter["userId"] = {"$nin": [exclude_user_id] + blocked_users}
     
     try:
         cursor = db.user_profiles.find(

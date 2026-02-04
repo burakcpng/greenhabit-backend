@@ -13,6 +13,7 @@ from bson import ObjectId
 from task_templates import TASK_POOL
 
 from learning_content import LEARNING_ARTICLES
+from utils.text_safety import ProfanityFilter # ✅ Apple Guideline 1.2 Compliance
 from auth_system import AuthSystem, get_current_user # ✅ NEW Secure Auth
 from rate_limiter import check_rate_limit, check_toggle_cooldown  # ✅ Security: Rate Limiting
 
@@ -952,13 +953,13 @@ def get_ranking(
     limit: int = Query(50, ge=1, le=100),
     user_id: str = Depends(get_current_user)
 ):
-    """Get global leaderboard"""
+    """Get global leaderboard (filtered by viewer's blocked users)"""
     try:
         db = get_db()
         from social_system import get_global_ranking
-        from social_system import get_global_ranking
         
-        ranking = get_global_ranking(db, limit)
+        # Apple Guideline 1.2: Pass viewer_id for blocked user filtering
+        ranking = get_global_ranking(db, limit, viewer_id=user_id)
         return ranking
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch ranking: {str(e)}")
@@ -1010,6 +1011,15 @@ def update_social_profile(
         db = get_db()
         # user_id provided by Depends
         from social_system import update_user_profile
+        
+        # ✅ Apple Guideline 1.2: Content Safety Check
+        try:
+            if payload.displayName:
+                ProfanityFilter.validate_content(payload.displayName, "Display Name")
+            if payload.bio:
+                ProfanityFilter.validate_content(payload.bio, "Bio")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         
         profile = update_user_profile(db, user_id, payload.displayName, payload.bio)
         return profile
@@ -1108,14 +1118,15 @@ def get_followers_endpoint(
     target_id: str,
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=50),
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
-    """Get followers list for a user"""
+    """Get followers list for a user (filtered by viewer's blocked users)"""
     try:
         db = get_db()
         from social_system import get_followers
         
-        result = get_followers(db, target_id, page, limit)
+        # Apple Guideline 1.2: Pass viewer_id for blocked user filtering
+        result = get_followers(db, target_id, page, limit, viewer_id=user_id)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch followers: {str(e)}")
@@ -1125,14 +1136,15 @@ def get_following_endpoint(
     target_id: str,
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=50),
-    x_user_id: Optional[str] = Header(None)
+    user_id: str = Depends(get_current_user)
 ):
-    """Get following list for a user"""
+    """Get following list for a user (filtered by viewer's blocked users)"""
     try:
         db = get_db()
         from social_system import get_following
         
-        result = get_following(db, target_id, page, limit)
+        # Apple Guideline 1.2: Pass viewer_id for blocked user filtering
+        result = get_following(db, target_id, page, limit, viewer_id=user_id)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch following: {str(e)}")
@@ -1169,6 +1181,136 @@ def update_privacy_endpoint(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update privacy settings: {str(e)}")
+
+# ======================== UGC REPORT & BLOCK SYSTEM ========================
+# Apple Guideline 1.2 Compliance: User-generated content moderation
+
+class ReportUserPayload(BaseModel):
+    reportedUserId: str
+    contentType: str = Field(..., description="bio, name, post, profile")
+    reason: str = Field(..., description="harassment, spam, inappropriate_content")
+
+class BlockUserPayload(BaseModel):
+    blockedUserId: str
+
+@api.post("/social/report")
+async def report_user_endpoint(
+    payload: ReportUserPayload,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Report a user for inappropriate content.
+    Triggers immediate Telegram notification for 24-hour response compliance.
+    """
+    try:
+        db = get_db()
+        
+        # Prevent self-reporting
+        if payload.reportedUserId == user_id:
+            raise HTTPException(status_code=400, detail="Cannot report yourself")
+        
+        # Create report document
+        report_doc = {
+            "reporterId": user_id,
+            "reportedUserId": payload.reportedUserId,
+            "contentType": payload.contentType,
+            "reason": payload.reason,
+            "status": "pending",
+            "createdAt": datetime.utcnow()
+        }
+        
+        result = db.reports.insert_one(report_doc)
+        report_id = str(result.inserted_id)
+        
+        # Send Telegram notification (async - don't block response)
+        try:
+            from telegram_notifications import send_ugc_report_notification
+            await send_ugc_report_notification(
+                reporter_id=user_id,
+                reported_user_id=payload.reportedUserId,
+                content_type=payload.contentType,
+                reason=payload.reason,
+                report_id=report_id
+            )
+        except Exception as telegram_error:
+            print(f"⚠️ Telegram notification failed (non-blocking): {telegram_error}")
+        
+        return {
+            "success": True,
+            "message": "Report submitted successfully",
+            "reportId": report_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to submit report: {str(e)}")
+
+@api.post("/social/block")
+def block_user_endpoint(
+    payload: BlockUserPayload,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Block a user. Blocked users won't appear in social feeds, search, or rankings.
+    """
+    try:
+        db = get_db()
+        
+        # Prevent self-blocking
+        if payload.blockedUserId == user_id:
+            raise HTTPException(status_code=400, detail="Cannot block yourself")
+        
+        # Add to blockedUsers array using $addToSet (prevents duplicates)
+        db.users.update_one(
+            {"userId": user_id},
+            {"$addToSet": {"blockedUsers": payload.blockedUserId}},
+            upsert=True
+        )
+        
+        # Also unfollow the blocked user if following
+        try:
+            from social_system import unfollow_user
+            unfollow_user(db, user_id, payload.blockedUserId)
+        except:
+            pass  # Ignore if not following
+        
+        return {
+            "success": True,
+            "message": "User blocked successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to block user: {str(e)}")
+
+@api.delete("/social/block/{target_id}")
+def unblock_user_endpoint(
+    target_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Unblock a previously blocked user.
+    """
+    try:
+        db = get_db()
+        
+        # Remove from blockedUsers array
+        db.users.update_one(
+            {"userId": user_id},
+            {"$pull": {"blockedUsers": target_id}}
+        )
+        
+        return {
+            "success": True,
+            "message": "User unblocked successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to unblock user: {str(e)}")
 
 # ======================== TASK SHARING ROUTES ========================
 
@@ -1324,6 +1466,12 @@ def create_team_endpoint(
     try:
         db = get_db()
         from team_system import create_team, get_my_team, get_team_members
+        
+        # ✅ Apple Guideline 1.2: Content Safety Check
+        try:
+            ProfanityFilter.validate_content(payload.name, "Team Name")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         
         result = create_team(db, user_id, payload.name, payload.invitedUserIds)
         
