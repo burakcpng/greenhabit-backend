@@ -62,7 +62,9 @@ async def send_ugc_report_notification(
     reported_user_id: str,
     content_type: str,
     reason: str,
-    report_id: Optional[str] = None
+    report_id: Optional[str] = None,
+    task_id: Optional[str] = None,  # ✅ Task-level reporting
+    task_title: Optional[str] = None  # ✅ Task-level reporting
 ) -> dict:
     """
     Send a formatted UGC report notification to the developer.
@@ -73,9 +75,11 @@ async def send_ugc_report_notification(
     Args:
         reporter_id: User ID of the person making the report
         reported_user_id: User ID of the reported user
-        content_type: Type of content being reported (bio, name, post, etc.)
+        content_type: Type of content being reported (bio, name, post, task)
         reason: Reason for the report (harassment, spam, inappropriate)
         report_id: Optional report document ID for reference
+        task_id: Optional task ID if reporting task content
+        task_title: Optional task title for context
     
     Returns:
         dict with success status
@@ -96,6 +100,9 @@ async def send_ugc_report_notification(
 
 _Apple Guideline 1.2 Uyumluluğu_"""
 
+    if task_id and task_title:
+        message += f"\n\n📝 *Task Detayları:*\n• Task ID: `{task_id}`\n• Başlık: _{task_title}_"
+    
     if report_id:
         message += f"\n📎 Rapor ID: `{report_id}`"
     

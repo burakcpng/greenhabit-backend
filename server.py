@@ -122,6 +122,8 @@ class CreateTaskPayload(BaseModel):
     estimatedImpact: str = Field(..., max_length=200)
     date: Optional[str] = None
     evidenceImagePath: Optional[str] = None  # ✅ FIX: Photo proof persistence
+    creatorType: Optional[str] = "user"  # ✅ Creator Attribution: "system" or "user"
+
 
 class UpdateTaskPayload(BaseModel):
     isCompleted: Optional[bool] = None
@@ -272,13 +274,25 @@ def get_tasks(
             for profile in profiles:
                 creator_names[profile["userId"]] = profile.get("displayName", "GreenHabit User")
         
-        # Add creatorId and creatorName to tasks
+        # Add creatorId, creatorName, and creatorType to tasks
         for task in tasks:
+            # Get stored creatorType, default to "user" for backward compatibility
+            creator_type = task.get("creatorType", "user")
             shared_by = task.get("sharedBy")
-            if shared_by:
+            
+            if creator_type == "system":
+                # ✅ System-generated task (AI): Display as "Green Habit"
+                task["creatorType"] = "system"
+                task["creatorId"] = None
+                task["creatorName"] = "Green Habit"
+            elif shared_by:
+                # ✅ Shared task: Display original creator
+                task["creatorType"] = "user"
                 task["creatorId"] = shared_by
                 task["creatorName"] = creator_names.get(shared_by, "GreenHabit User")
             else:
+                # ✅ User's own task: No external creator
+                task["creatorType"] = "user"
                 task["creatorId"] = None
                 task["creatorName"] = None
         
@@ -312,6 +326,7 @@ def create_task(
             "points": payload.points,
             "estimatedImpact": payload.estimatedImpact,
             "evidenceImagePath": payload.evidenceImagePath,  # ✅ FIX: Save photo proof path
+            "creatorType": payload.creatorType or "user",  # ✅ Creator Attribution
             "isCompleted": False,
             "completedAt": None,
             "createdAt": datetime.utcnow(),
