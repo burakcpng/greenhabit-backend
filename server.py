@@ -261,6 +261,27 @@ def get_tasks(
             query["isCompleted"] = completed
         
         tasks = list(db.tasks.find(query).sort("createdAt", DESCENDING).limit(limit))
+        
+        # ✅ Enrich shared tasks with creator info
+        shared_by_ids = set(t.get("sharedBy") for t in tasks if t.get("sharedBy"))
+        creator_names = {}
+        
+        if shared_by_ids:
+            # Batch lookup creator profiles
+            profiles = db.user_profiles.find({"userId": {"$in": list(shared_by_ids)}})
+            for profile in profiles:
+                creator_names[profile["userId"]] = profile.get("displayName", "GreenHabit User")
+        
+        # Add creatorId and creatorName to tasks
+        for task in tasks:
+            shared_by = task.get("sharedBy")
+            if shared_by:
+                task["creatorId"] = shared_by
+                task["creatorName"] = creator_names.get(shared_by, "GreenHabit User")
+            else:
+                task["creatorId"] = None
+                task["creatorName"] = None
+        
         return sanitize_docs(tasks)
     except HTTPException:
         raise
