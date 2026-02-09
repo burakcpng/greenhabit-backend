@@ -42,6 +42,36 @@ def calculate_total_co2_saved(db, user_id: str) -> float:
     return round(count * 0.3, 2)
 
 
+# ======================== USER MANUAL TASKS (Profile Display) ========================
+
+def get_user_manual_tasks(db, user_id: str, limit: int = 10) -> List[Dict]:
+    """
+    Fetch user's manual tasks (creatorType != 'system') for profile display.
+    Only returns completed tasks as proof of activity.
+    System-generated (AI) tasks are excluded.
+    """
+    pipeline = [
+        {"$match": {
+            "userId": user_id,
+            "creatorType": {"$ne": "system"},  # Exclude AI/system tasks
+            "isCompleted": True  # Only show completed tasks
+        }},
+        {"$sort": {"completedAt": -1}},  # Most recent first
+        {"$limit": limit},
+        {"$project": {
+            "_id": 0,
+            "id": {"$ifNull": ["$id", {"$toString": "$_id"}]},
+            "title": 1,
+            "details": 1,
+            "category": 1,
+            "points": 1,
+            "estimatedImpact": 1,
+            "completedAt": 1
+        }}
+    ]
+    return list(db.tasks.aggregate(pipeline))
+
+
 # ======================== BLOCKED USERS HELPER ========================
 
 def get_blocked_users(db, user_id: str) -> List[str]:
@@ -139,6 +169,12 @@ def get_social_profile(db, user_id: str, viewer_id: Optional[str] = None) -> Dic
     if privacy.get("showStats", True) or viewer_id == user_id:
         weekly_stats = get_user_weekly_stats(db, user_id)
     
+    # Get manual tasks for profile display (only for viewing other users)
+    # Respects showStats privacy setting
+    manual_tasks = []
+    if viewer_id and viewer_id != user_id and privacy.get("showStats", True):
+        manual_tasks = get_user_manual_tasks(db, user_id, limit=10)
+    
     return {
         "userId": user_id,
         "displayName": profile.get("displayName"),
@@ -153,6 +189,7 @@ def get_social_profile(db, user_id: str, viewer_id: Optional[str] = None) -> Dic
         "co2Saved": co2_saved,
         "achievements": achievements if (privacy.get("showAchievements", True) or viewer_id == user_id) else [],
         "weeklyStats": weekly_stats,
+        "manualTasks": manual_tasks,  # User-created tasks for profile discovery
         "followerCount": follower_count,
         "followingCount": following_count,
         "isFollowing": is_following,
