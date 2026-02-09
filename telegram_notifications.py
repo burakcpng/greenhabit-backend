@@ -163,10 +163,11 @@ _Apple Guideline 1.2 Uyumluluğu_"""
         message += f"\n📎 Rapor ID: `{report_id}`"
     
     # ✅ Inline Keyboard Buttons for instant moderation
+    # NOTE: Telegram requires HTTPS URLs - iOS intercepts via Universal Links
     buttons = [[
         {
             "text": "👤 View Profile",
-            "url": f"greenhabit://user?id={reported_user_id}"
+            "url": f"https://greenhabit-backend.onrender.com/user/{reported_user_id}"
         },
         {
             "text": "🚫 Ban User",

@@ -2145,12 +2145,75 @@ async def apple_app_site_association():
             "details": [
                 {
                     "appID": "9264X3737M.com.burakcpng.GreenHabit", 
-                    "paths": ["/share/*"]
+                    "paths": ["/share/*", "/user/*"]  # ✅ Added /user/* for moderation deep links
                 }
             ]
         }
     }
     return JSONResponse(content=content)
+
+
+# ======================== USER PROFILE UNIVERSAL LINK ========================
+# Telegram requires HTTPS URLs - iOS intercepts this via Universal Links
+
+@app.get("/user/{user_id}", response_class=HTMLResponse)
+def user_profile_redirect(user_id: str):
+    """
+    Universal Link endpoint for user profiles.
+    
+    iOS: Universal Links intercept this → opens ProfileView(userId:)
+    Browser: Shows HTML fallback with deep link button
+    """
+    html_content = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>View Profile • GreenHabit</title>
+        <meta http-equiv="refresh" content="0;url=greenhabit://user?id={user_id}">
+        <style>
+            :root {{
+                --bg-color: #0b1c2d;
+                --text-primary: #FFFFFF;
+                --accent: #00E676;
+            }}
+            body {{
+                margin: 0;
+                padding: 40px 20px;
+                background-color: var(--bg-color);
+                color: var(--text-primary);
+                font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                min-height: 100vh;
+                text-align: center;
+            }}
+            .logo {{ font-size: 64px; margin-bottom: 20px; }}
+            h1 {{ font-size: 24px; margin-bottom: 16px; }}
+            p {{ color: rgba(255,255,255,0.6); margin-bottom: 24px; }}
+            .btn {{
+                display: inline-block;
+                padding: 16px 32px;
+                background: var(--accent);
+                color: #000;
+                text-decoration: none;
+                border-radius: 12px;
+                font-weight: 600;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="logo">🌿</div>
+        <h1>Opening GreenHabit...</h1>
+        <p>If the app doesn't open, tap the button below.</p>
+        <a href="greenhabit://user?id={user_id}" class="btn">Open in App</a>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
 
 @app.get("/share/{share_id}", response_class=HTMLResponse)
 def share_landing_page(share_id: str):
