@@ -239,6 +239,63 @@ def login_with_apple(payload: LoginPayload):
         print(f"❌ Login failed: {e}")
         raise HTTPException(status_code=500, detail=f"Login processing failed: {str(e)}")
 
+# ======================== DEV LOGIN (SIMULATOR ONLY) ========================
+
+class DevLoginPayload(BaseModel):
+    userId: str = Field(..., min_length=1, max_length=100)
+    displayName: Optional[str] = None
+
+@api.post("/auth/dev-login")
+def dev_login(payload: DevLoginPayload):
+    """
+    Simulator-only login bypass. Skips Apple token verification.
+    SECURITY: Only available when DEV_MODE=1 environment variable is set.
+    Never set DEV_MODE on production deployments.
+    """
+    if not os.getenv("DEV_MODE"):
+        raise HTTPException(status_code=403, detail="Dev login is disabled")
+
+    try:
+        db = get_db()
+        dev_user_id = payload.userId
+        current_time = datetime.utcnow()
+
+        # Upsert user record
+        user = db.users.find_one({"userId": dev_user_id})
+
+        if not user:
+            db.users.insert_one({
+                "userId": dev_user_id,
+                "appleUserId": dev_user_id,
+                "displayName": payload.displayName or f"Test {dev_user_id}",
+                "createdAt": current_time,
+                "lastLogin": current_time,
+                "isVerified": True
+            })
+            print(f"🧪 Dev: Created test user '{dev_user_id}'")
+        else:
+            db.users.update_one(
+                {"userId": dev_user_id},
+                {"$set": {"lastLogin": current_time}}
+            )
+            print(f"🧪 Dev: Welcome back '{dev_user_id}'")
+
+        # Issue session token (same as real login)
+        session_token = AuthSystem.create_session_token(dev_user_id)
+
+        return {
+            "success": True,
+            "token": session_token,
+            "userId": dev_user_id,
+            "isNewUser": user is None
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Dev login failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Dev login failed: {str(e)}")
+
 # ======================== TASK ROUTES ========================
 
 @api.get("/tasks")
