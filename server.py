@@ -2003,6 +2003,132 @@ def register_token_endpoint(
         raise HTTPException(status_code=500, detail=f"Failed to register token: {str(e)}")
 
 
+# ======================== TELEGRAM WEBHOOK (Moderation) ========================
+# Apple Guideline 1.2 Compliance: Instant moderation actions from Telegram
+
+from fastapi import Request
+
+# Get authorized Telegram chat ID from environment
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+
+
+@app.post("/api/telegram/webhook")
+async def telegram_webhook(request: Request):
+    """
+    Handle Telegram callback queries for moderation actions.
+    
+    Security: Only processes requests from the authorized TELEGRAM_CHAT_ID.
+    This endpoint handles "Ban User" button presses from UGC report notifications.
+    """
+    try:
+        data = await request.json()
+        
+        # Check if this is a callback query (button press)
+        callback_query = data.get("callback_query")
+        if not callback_query:
+            # Not a callback query - just acknowledge
+            return {"ok": True}
+        
+        # ✅ SECURITY: Verify sender is authorized
+        from_id = str(callback_query.get("from", {}).get("id", ""))
+        
+        if not TELEGRAM_CHAT_ID or from_id != TELEGRAM_CHAT_ID:
+            print(f"⚠️ Unauthorized Telegram callback from: {from_id}")
+            raise HTTPException(
+                status_code=403, 
+                detail="Unauthorized: Sender ID not authorized"
+            )
+        
+        callback_data = callback_query.get("data", "")
+        callback_query_id = callback_query.get("id", "")
+        message = callback_query.get("message", {})
+        chat_id = str(message.get("chat", {}).get("id", ""))
+        message_id = message.get("message_id")
+        
+        # Handle "ban_[user_id]" callback
+        if callback_data.startswith("ban_"):
+            user_id_to_ban = callback_data[4:]  # Remove "ban_" prefix
+            
+            if not user_id_to_ban:
+                raise HTTPException(status_code=400, detail="Invalid user ID")
+            
+            db = get_db()
+            
+            # ✅ Acknowledge callback immediately (within 30s requirement)
+            from telegram_notifications import answer_callback_query, edit_message_text
+            await answer_callback_query(
+                callback_query_id, 
+                text="✅ User banned successfully!",
+                show_alert=True
+            )
+            
+            # Update user document to set isBanned: true
+            result = db.users.update_one(
+                {"userId": user_id_to_ban},
+                {"$set": {"isBanned": True, "bannedAt": datetime.utcnow()}}
+            )
+            
+            if result.matched_count > 0:
+                print(f"🚫 User {user_id_to_ban} has been banned via Telegram")
+                
+                # Update the original message to confirm action
+                if message_id and chat_id:
+                    timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+                    await edit_message_text(
+                        chat_id=chat_id,
+                        message_id=message_id,
+                        new_text=f"✅ *User Banned Successfully*\n\n"
+                                 f"• User ID: `{user_id_to_ban}`\n"
+                                 f"• Banned At: `{timestamp}`\n\n"
+                                 f"_The user can no longer access the application._"
+                    )
+                
+                return {"ok": True, "action": "user_banned", "userId": user_id_to_ban}
+            else:
+                print(f"⚠️ User {user_id_to_ban} not found in database")
+                return {"ok": True, "action": "user_not_found"}
+        
+        return {"ok": True}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Telegram webhook error: {e}")
+        raise HTTPException(status_code=500, detail=f"Webhook processing failed: {str(e)}")
+
+
+# ======================== BAN STATUS ENDPOINT ========================
+
+@api.get("/auth/ban-status")
+def get_ban_status(user_id: str = Depends(get_current_user)):
+    """
+    Check if the current user is banned.
+    Called on app launch to enforce ban at the client level.
+    
+    Returns:
+        isBanned: bool - Whether the user is currently banned
+        appealUrl: str - Instagram URL for ban appeals
+    """
+    try:
+        db = get_db()
+        
+        user = db.users.find_one({"userId": user_id}, {"isBanned": 1})
+        is_banned = user.get("isBanned", False) if user else False
+        
+        return {
+            "isBanned": is_banned,
+            "appealUrl": "https://www.instagram.com/greenhabittask"
+        }
+        
+    except Exception as e:
+        print(f"❌ Ban status check failed: {e}")
+        # Default to not banned on error (fail open for UX)
+        return {
+            "isBanned": False,
+            "appealUrl": "https://www.instagram.com/greenhabittask"
+        }
+
+
 app.include_router(api)
 
 
