@@ -280,6 +280,18 @@ def dev_login(payload: DevLoginPayload):
             )
             print(f"🧪 Dev: Welcome back '{dev_user_id}'")
 
+        # Ensure user_profiles entry exists (for display in follower/following lists)
+        db.user_profiles.update_one(
+            {"userId": dev_user_id},
+            {"$setOnInsert": {
+                "userId": dev_user_id,
+                "displayName": payload.displayName or f"Test {dev_user_id}",
+                "bio": "",
+                "createdAt": current_time
+            }},
+            upsert=True
+        )
+
         # Issue session token (same as real login)
         session_token = AuthSystem.create_session_token(dev_user_id)
 
