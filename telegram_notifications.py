@@ -181,16 +181,18 @@ _Apple Guideline 1.2 Uyumluluğu_"""
 async def edit_message_text(
     chat_id: str,
     message_id: int,
-    new_text: str
+    new_text: str,
+    buttons: Optional[list[list[dict]]] = None
 ) -> dict:
     """
-    Edit an existing Telegram message text.
+    Edit an existing Telegram message text, optionally with inline buttons.
     Used to update UGC report messages after moderation action.
     
     Args:
         chat_id: The chat ID where the message exists
         message_id: The message ID to edit
         new_text: The new text content
+        buttons: Optional 2D array of inline keyboard buttons
     
     Returns:
         dict with success status
@@ -205,6 +207,9 @@ async def edit_message_text(
         "text": new_text,
         "parse_mode": "Markdown"
     }
+    
+    if buttons:
+        payload["reply_markup"] = {"inline_keyboard": buttons}
     
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:

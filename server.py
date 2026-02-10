@@ -2140,21 +2140,85 @@ async def telegram_webhook(request: Request):
             if result.matched_count > 0:
                 print(f"🚫 User {user_id_to_ban} has been banned via Telegram")
                 
-                # Update the original message to confirm action
+                # Update the original message with Unban button
                 if message_id and chat_id:
                     timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+                    unban_buttons = [[
+                        {
+                            "text": "👤 View Profile",
+                            "url": f"https://greenhabit-backend.onrender.com/user/{user_id_to_ban}"
+                        },
+                        {
+                            "text": "✅ Unban User",
+                            "callback_data": f"unban_{user_id_to_ban}"
+                        }
+                    ]]
                     await edit_message_text(
                         chat_id=chat_id,
                         message_id=message_id,
-                        new_text=f"✅ *User Banned Successfully*\n\n"
+                        new_text=f"🚫 *User Banned*\n\n"
                                  f"• User ID: `{user_id_to_ban}`\n"
                                  f"• Banned At: `{timestamp}`\n\n"
-                                 f"_The user can no longer access the application._"
+                                 f"_Tap 'Unban User' to reverse this action._",
+                        buttons=unban_buttons
                     )
                 
                 return {"ok": True, "action": "user_banned", "userId": user_id_to_ban}
             else:
                 print(f"⚠️ User {user_id_to_ban} not found in database")
+                return {"ok": True, "action": "user_not_found"}
+        
+        # Handle "unban_[user_id]" callback
+        if callback_data.startswith("unban_"):
+            user_id_to_unban = callback_data[6:]  # Remove "unban_" prefix
+            
+            if not user_id_to_unban:
+                raise HTTPException(status_code=400, detail="Invalid user ID")
+            
+            db = get_db()
+            
+            from telegram_notifications import answer_callback_query, edit_message_text
+            await answer_callback_query(
+                callback_query_id,
+                text="✅ User unbanned successfully!",
+                show_alert=True
+            )
+            
+            # Remove ban from user document
+            result = db.users.update_one(
+                {"userId": user_id_to_unban},
+                {"$set": {"isBanned": False}, "$unset": {"bannedAt": ""}}
+            )
+            
+            if result.matched_count > 0:
+                print(f"✅ User {user_id_to_unban} has been unbanned via Telegram")
+                
+                # Update the message with Re-Ban button
+                if message_id and chat_id:
+                    timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+                    reban_buttons = [[
+                        {
+                            "text": "👤 View Profile",
+                            "url": f"https://greenhabit-backend.onrender.com/user/{user_id_to_unban}"
+                        },
+                        {
+                            "text": "🚫 Ban User",
+                            "callback_data": f"ban_{user_id_to_unban}"
+                        }
+                    ]]
+                    await edit_message_text(
+                        chat_id=chat_id,
+                        message_id=message_id,
+                        new_text=f"✅ *User Unbanned*\n\n"
+                                 f"• User ID: `{user_id_to_unban}`\n"
+                                 f"• Unbanned At: `{timestamp}`\n\n"
+                                 f"_Tap 'Ban User' to re-ban if needed._",
+                        buttons=reban_buttons
+                    )
+                
+                return {"ok": True, "action": "user_unbanned", "userId": user_id_to_unban}
+            else:
+                print(f"⚠️ User {user_id_to_unban} not found in database")
                 return {"ok": True, "action": "user_not_found"}
         
         return {"ok": True}
