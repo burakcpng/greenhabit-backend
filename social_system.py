@@ -44,20 +44,28 @@ def calculate_total_co2_saved(db, user_id: str) -> float:
 
 # ======================== USER MANUAL TASKS (Profile Display) ========================
 
-def get_user_manual_tasks(db, user_id: str, limit: int = 10) -> List[Dict]:
+def get_user_manual_tasks(db, user_id: str, viewer_id: Optional[str] = None, limit: int = 10) -> List[Dict]:
     """
     Fetch user's manual tasks (creatorType != 'system') for profile display.
-    Only returns completed tasks as proof of activity.
+    Includes like count and viewer-specific isLiked flag.
     System-generated (AI) tasks are excluded.
     """
     pipeline = [
         {"$match": {
             "userId": user_id,
             "creatorType": {"$ne": "system"},  # Exclude AI/system tasks
-            "isCompleted": True  # Only show completed tasks
         }},
-        {"$sort": {"completedAt": -1}},  # Most recent first
+        {"$sort": {"createdAt": -1}},  # Most recent first
         {"$limit": limit},
+        # Lookup like count from task_likes collection
+        {"$lookup": {
+            "from": "task_likes",
+            "let": {"taskId": {"$ifNull": ["$id", {"$toString": "$_id"}]}},
+            "pipeline": [
+                {"$match": {"$expr": {"$eq": ["$taskId", "$$taskId"]}}}
+            ],
+            "as": "likes"
+        }},
         {"$project": {
             "_id": 0,
             "id": {"$ifNull": ["$id", {"$toString": "$_id"}]},
@@ -66,10 +74,65 @@ def get_user_manual_tasks(db, user_id: str, limit: int = 10) -> List[Dict]:
             "category": 1,
             "points": 1,
             "estimatedImpact": 1,
-            "completedAt": 1
+            "completedAt": 1,
+            "createdAt": 1,
+            "creatorId": {"$ifNull": ["$userId", None]},
+            "likeCount": {"$size": "$likes"},
+            "likerIds": {"$map": {"input": "$likes", "as": "l", "in": "$$l.userId"}}
         }}
     ]
-    return list(db.tasks.aggregate(pipeline))
+    tasks = list(db.tasks.aggregate(pipeline))
+
+    # Annotate isLiked per task for the viewer
+    for task in tasks:
+        liker_ids = task.pop("likerIds", [])
+        task["isLiked"] = (viewer_id in liker_ids) if viewer_id else False
+
+    return tasks
+
+
+# ======================== TASK LIKE SYSTEM ========================
+
+def like_task(db, user_id: str, task_id: str) -> Dict:
+    """
+    Like a task. Idempotent — duplicate likes are silently ignored.
+    Returns updated like count.
+    """
+    # Rate limit likes (60/hour)
+    try:
+        check_user_rate(user_id, "like")
+    except RateLimitExceeded:
+        return {"success": False, "likeCount": 0, "message": "Too many likes. Please try again later."}
+
+    # Verify the task exists
+    task = db.tasks.find_one({"$or": [{"id": task_id}, {"_id": ObjectId(task_id) if ObjectId.is_valid(task_id) else None}]})
+    if not task:
+        return {"success": False, "likeCount": 0, "message": "Task not found."}
+
+    # Upsert to prevent duplicates
+    db.task_likes.update_one(
+        {"userId": user_id, "taskId": task_id},
+        {"$setOnInsert": {
+            "userId": user_id,
+            "taskId": task_id,
+            "taskOwnerId": task.get("userId"),
+            "createdAt": datetime.utcnow()
+        }},
+        upsert=True
+    )
+
+    like_count = db.task_likes.count_documents({"taskId": task_id})
+    return {"success": True, "likeCount": like_count}
+
+
+def unlike_task(db, user_id: str, task_id: str) -> Dict:
+    """
+    Unlike a task. Idempotent — calling on an un-liked task is a no-op.
+    Returns updated like count.
+    """
+    db.task_likes.delete_one({"userId": user_id, "taskId": task_id})
+    like_count = db.task_likes.count_documents({"taskId": task_id})
+    return {"success": True, "likeCount": like_count}
 
 
 # ======================== BLOCKED USERS HELPER ========================
@@ -169,11 +232,15 @@ def get_social_profile(db, user_id: str, viewer_id: Optional[str] = None) -> Dic
     if privacy.get("showStats", True) or viewer_id == user_id:
         weekly_stats = get_user_weekly_stats(db, user_id)
     
-    # Get manual tasks for profile display (only for viewing other users)
-    # Respects showStats privacy setting
+    # Get manual tasks for profile display (own profile + other users)
+    # Respects showStats privacy setting for other viewers
     manual_tasks = []
-    if viewer_id and viewer_id != user_id and privacy.get("showStats", True):
-        manual_tasks = get_user_manual_tasks(db, user_id, limit=10)
+    if viewer_id == user_id:
+        # Own profile — always show own manual tasks
+        manual_tasks = get_user_manual_tasks(db, user_id, viewer_id=viewer_id, limit=10)
+    elif viewer_id and privacy.get("showStats", True):
+        # Other user viewing — respect privacy
+        manual_tasks = get_user_manual_tasks(db, user_id, viewer_id=viewer_id, limit=10)
     
     return {
         "userId": user_id,
@@ -654,6 +721,10 @@ def ensure_social_indexes(db):
     
     # Users blockedUsers index
     db.users.create_index([("userId", 1)], unique=True)
+    
+    # Task likes indexes (unique compound to prevent duplicate likes)
+    db.task_likes.create_index([("userId", 1), ("taskId", 1)], unique=True)
+    db.task_likes.create_index([("taskId", 1)])  # Fast like count lookups
     
     print("✅ Social indexes created")
 

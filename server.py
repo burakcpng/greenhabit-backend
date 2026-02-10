@@ -1218,6 +1218,44 @@ def unfollow_user_endpoint(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to unfollow user: {str(e)}")
 
+# --- Task Like Endpoints ---
+
+@api.post("/tasks/{task_id}/like")
+def like_task_endpoint(
+    task_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    """Like a task on someone's profile"""
+    try:
+        db = get_db()
+        from social_system import like_task
+        
+        result = like_task(db, user_id, task_id)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result.get("message", "Failed to like task"))
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to like task: {str(e)}")
+
+@api.delete("/tasks/{task_id}/like")
+def unlike_task_endpoint(
+    task_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    """Unlike a task"""
+    try:
+        db = get_db()
+        from social_system import unlike_task
+        
+        result = unlike_task(db, user_id, task_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to unlike task: {str(e)}")
+
 @api.get("/users/{target_id}/followers")
 def get_followers_endpoint(
     target_id: str,
