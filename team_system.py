@@ -245,8 +245,11 @@ def invite_to_team(db, team_id: str, inviter_id: str, invitee_id: str) -> Dict:
     if not team:
         return {"success": False, "message": "Team not found"}
     
+    # Allow creator OR members with canShareTasks permission
     if team["creatorId"] != inviter_id:
-        return {"success": False, "message": "Only the team creator can invite members"}
+        member = db.team_members.find_one({"teamId": team_id, "userId": inviter_id})
+        if not member or not member.get("canShareTasks", False):
+            return {"success": False, "message": "You don't have permission to invite members"}
     
     # ✅ SECURITY: Daily invitation limit (10/day) to prevent spam
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -457,8 +460,11 @@ def share_task_to_team(db, team_id: str, sender_id: str, task_data: Dict) -> Dic
     if not team:
         return {"success": False, "message": "Team not found"}
     
+    # Allow creator OR members with canShareTasks permission
     if team["creatorId"] != sender_id:
-        return {"success": False, "message": "Only the team creator can share tasks to the team"}
+        member = db.team_members.find_one({"teamId": team_id, "userId": sender_id})
+        if not member or not member.get("canShareTasks", False):
+            return {"success": False, "message": "You don't have permission to share tasks"}
     
     # Get sender name
     sender_profile = db.user_profiles.find_one({"userId": sender_id})

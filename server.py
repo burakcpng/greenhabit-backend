@@ -912,8 +912,6 @@ def get_streak(user_id: str = Depends(get_current_user)):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch streak: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch streak: {str(e)}")
 
 # ======================== USER ACCOUNT DELETION ========================
 
