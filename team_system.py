@@ -168,6 +168,7 @@ def get_team_members(db, team_id: str) -> List[Dict]:
             "userId": m["userId"],
             "displayName": user_profile.get("displayName", "GreenHabit User") if user_profile else "GreenHabit User",
             "role": m["role"],
+            "canShareTasks": m.get("canShareTasks", False),
             "joinedAt": m["joinedAt"].isoformat() + "Z" if m.get("joinedAt") else None,
             "totalPoints": user_stats.get("totalPoints", 0),
             "tasksCompleted": user_stats.get("tasksCompleted", 0),
