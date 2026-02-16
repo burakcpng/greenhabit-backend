@@ -133,6 +133,12 @@ class UpdateTaskPayload(BaseModel):
     points: Optional[int] = Field(None, ge=0, le=1000)
     estimatedImpact: Optional[str] = None
     evidenceImagePath: Optional[str] = None  # ✅ FIX: Photo proof persistence
+    completionLocalDate: Optional[str] = None  # ✅ Streak v2: "YYYY-MM-DD" in user's local TZ
+    timezoneIdentifier: Optional[str] = None   # ✅ Streak v2: IANA TZ (e.g. "Europe/Istanbul")
+
+# ✅ Streak v2: Batch offline completion sync payload
+class CompletionSyncPayload(BaseModel):
+    completions: List[dict]  # [{taskId, completionLocalDate, timezoneIdentifier, completedAt}]
 
 # ======================== ROOT ENDPOINTS ========================
 
@@ -505,16 +511,28 @@ def update_task(
         
         # If completing task, calculate rewards and check achievements
         if is_completing_task and result.modified_count > 0:
-            from rewards_system import calculate_rewards, check_new_achievements, calculate_streak
+            from streak_system import record_completion, InvalidCompletionError
+            from rewards_system import calculate_rewards, check_new_achievements
             
-            # Calculate rewards
-            rewards = calculate_rewards(db, user_id, task)
+            # ✅ Streak v2: Record completion with timezone safety
+            local_date = payload.completionLocalDate or task.get("date", date.today().isoformat())
+            tz_id = payload.timezoneIdentifier or "UTC"
+            
+            try:
+                streak_info = record_completion(db, user_id, local_date, tz_id, source="online")
+            except InvalidCompletionError as e:
+                print(f"⚠️ Streak validation warning (non-blocking): {e}")
+                # Non-blocking: still complete the task, just use fallback streak
+                streak_info = {
+                    "currentStreak": 0, "longestStreak": 0,
+                    "lastCompletedDate": local_date, "isDuplicate": False
+                }
+            
+            # Calculate rewards with the streak value
+            rewards = calculate_rewards(db, user_id, task, streak_info.get("currentStreak", 0))
             
             # Check for new achievements
-            new_achievements = check_new_achievements(db, user_id)
-            
-            # Get updated streak info
-            streak_info = calculate_streak(db, user_id)
+            new_achievements = check_new_achievements(db, user_id, streak_info.get("currentStreak", 0))
             
             response["rewards"] = rewards
             response["newAchievements"] = new_achievements
@@ -831,6 +849,10 @@ def startup_event():
         # Create team indexes
         from team_system import ensure_team_indexes
         ensure_team_indexes(db)
+        
+        # ✅ Streak v2: Create streak indexes
+        from streak_system import ensure_streak_indexes
+        ensure_streak_indexes(db)
     except Exception as e:
         print(f"❌ Database connection failed: {e}")
 
@@ -852,14 +874,13 @@ def get_profile(user_id: str = Depends(get_current_user)):
         db = get_db()
         # user_id provided by Depends
         
-        from rewards_system import get_user_profile, calculate_streak
+        from rewards_system import get_user_profile
         
         profile = get_user_profile(db, user_id)
-        streak_info = calculate_streak(db, user_id)
         
-        # Merge streak info into profile
-        profile["currentStreak"] = streak_info["currentStreak"]
-        profile["longestStreak"] = streak_info["longestStreak"]
+        # ✅ Streak v2: Read stored streak from user_profiles (O(1))
+        profile["currentStreak"] = profile.get("currentStreak", 0)
+        profile["longestStreak"] = profile.get("longestStreak", 0)
         
         return profile
     except HTTPException:
@@ -898,20 +919,69 @@ def get_achievements(user_id: str = Depends(get_current_user)):
 
 @api.get("/streak")
 def get_streak(user_id: str = Depends(get_current_user)):
-    """Get streak information"""
+    """Get streak information — reads stored streak (O(1))"""
     try:
         db = get_db()
         # user_id provided by Depends
         
-        from rewards_system import calculate_streak
+        profile = db.user_profiles.find_one({"userId": user_id}) or {}
         
-        streak_info = calculate_streak(db, user_id)
+        return {
+            "currentStreak": profile.get("currentStreak", 0),
+            "longestStreak": profile.get("longestStreak", 0),
+            "lastCompletedDate": profile.get("lastCompletedLocalDate")
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch streak: {str(e)}")
+
+# ✅ Streak v2: Batch offline completion sync
+@api.post("/completions/sync")
+def sync_completions(
+    payload: CompletionSyncPayload,
+    user_id: str = Depends(get_current_user)
+):
+    """Batch-validate and record offline completions with streak calculation."""
+    try:
+        db = get_db()
+        
+        from streak_system import validate_offline_completions
+        
+        result = validate_offline_completions(db, user_id, payload.completions)
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to sync completions: {str(e)}")
+
+# ✅ Streak v2: Force recalculate streak from completions (recovery endpoint)
+@api.post("/streak/recalculate")
+def recalculate_streak(user_id: str = Depends(get_current_user)):
+    """Recalculate streak from habit_completions — use for recovery."""
+    try:
+        db = get_db()
+        
+        from streak_system import calculate_streak_from_completions
+        
+        streak_info = calculate_streak_from_completions(db, user_id)
+        
+        # Store recalculated values
+        db.user_profiles.update_one(
+            {"userId": user_id},
+            {"$set": {
+                "currentStreak": streak_info["currentStreak"],
+                "longestStreak": streak_info["longestStreak"],
+                "lastCompletedLocalDate": streak_info["lastCompletedDate"]
+            }}
+        )
         
         return streak_info
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch streak: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to recalculate streak: {str(e)}")
 
 # ======================== USER ACCOUNT DELETION ========================
 

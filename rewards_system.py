@@ -148,10 +148,16 @@ ACHIEVEMENTS = {
 
 def calculate_streak(db, user_id: str) -> Dict:
     """
-    Calculate current streak and longest streak
-    Returns: {currentStreak: int, longestStreak: int, lastCompletedDate: str}
+    DEPRECATED: Use streak_system.calculate_streak_from_completions() instead.
+    Kept for backward compatibility during migration.
     """
-    # Get all dates with completed tasks, sorted desc
+    # Redirect to new system if habit_completions exist
+    completions_count = db.habit_completions.count_documents({"userId": user_id})
+    if completions_count > 0:
+        from streak_system import calculate_streak_from_completions
+        return calculate_streak_from_completions(db, user_id)
+    
+    # Legacy fallback: derive from tasks collection
     pipeline = [
         {"$match": {"userId": user_id, "isCompleted": True}},
         {"$group": {"_id": "$date"}},
@@ -167,7 +173,6 @@ def calculate_streak(db, user_id: str) -> Dict:
             "lastCompletedDate": None
         }
     
-    # Calculate current streak
     current_streak = 0
     today = date.today()
     check_date = today
@@ -181,7 +186,6 @@ def calculate_streak(db, user_id: str) -> Dict:
         elif completed_date < check_date:
             break
     
-    # Calculate longest streak
     longest_streak = 0
     temp_streak = 0
     prev_date = None
@@ -209,19 +213,18 @@ def calculate_streak(db, user_id: str) -> Dict:
 
 # ======================== REWARDS CALCULATION ========================
 
-def calculate_rewards(db, user_id: str, task: dict) -> Dict:
+def calculate_rewards(db, user_id: str, task: dict, current_streak: int = 0) -> Dict:
     """
     Calculate rewards for completing a task
     Returns points breakdown and bonuses
+    
+    Args:
+        current_streak: Pre-calculated streak from streak_system (avoids redundant DB query)
     """
     try:
         base_points = int(task.get("points", 10))
     except (ValueError, TypeError):
         base_points = 10
-    
-    # Get streak info
-    streak_info = calculate_streak(db, user_id)
-    current_streak = streak_info["currentStreak"]
     
     # Streak bonus: 2 points per day, max 50
     streak_bonus = min(current_streak * 2, 50) if current_streak > 0 else 0
@@ -254,10 +257,13 @@ def calculate_rewards(db, user_id: str, task: dict) -> Dict:
 
 # ======================== ACHIEVEMENT CHECK ========================
 
-def check_new_achievements(db, user_id: str) -> List[Dict]:
+def check_new_achievements(db, user_id: str, current_streak: int = 0) -> List[Dict]:
     """
     Check if user unlocked any new achievements
     Returns list of newly unlocked achievements
+    
+    Args:
+        current_streak: Pre-calculated streak from streak_system
     """
     # Get user's existing achievements
     user_profile = db.user_profiles.find_one({"userId": user_id})
@@ -283,8 +289,7 @@ def check_new_achievements(db, user_id: str) -> List[Dict]:
     }))
     total_tasks = len(user_tasks)
     
-    streak_info = calculate_streak(db, user_id)
-    current_streak = streak_info["currentStreak"]
+    # Use provided streak (no redundant DB call)
     
     # Calculate points from tasks
     task_points = 0
