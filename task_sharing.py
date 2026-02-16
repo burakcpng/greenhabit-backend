@@ -14,14 +14,19 @@ def create_task_share(
 ) -> Dict:
     """Create a task share request"""
     
+    # Prevent self-sending
+    if sender_id == recipient_id:
+        return {"success": False, "message": "Cannot send task to yourself"}
+    
+    # ✅ Apple 1.2: Block guard — cannot send task to blocked user
+    from block_system import is_blocked
+    if is_blocked(db, sender_id, recipient_id):
+        return {"success": False, "message": "Interaction not allowed due to block relationship"}
+    
     # Verify recipient exists
     recipient = db.user_profiles.find_one({"userId": recipient_id})
     if not recipient:
         return {"success": False, "message": "Recipient not found"}
-    
-    # Prevent self-sending
-    if sender_id == recipient_id:
-        return {"success": False, "message": "Cannot send task to yourself"}
     
     # Get sender name
     sender_profile = db.user_profiles.find_one({"userId": sender_id})
@@ -56,9 +61,15 @@ def create_task_share(
 def get_incoming_shares(db, user_id: str, status: str = "pending") -> List[Dict]:
     """Get incoming task shares for a user"""
     
+    # ✅ Apple 1.2: Exclude shares from blocked users
+    from block_system import get_all_blocked_ids
+    blocked_ids = get_all_blocked_ids(db, user_id)
+    
     query = {"recipientId": user_id}
     if status:
         query["status"] = status
+    if blocked_ids:
+        query["senderId"] = {"$nin": blocked_ids}
     
     shares = list(db.task_shares.find(query).sort("createdAt", -1))
     

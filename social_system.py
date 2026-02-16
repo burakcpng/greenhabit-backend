@@ -139,13 +139,12 @@ def unlike_task(db, user_id: str, task_id: str) -> Dict:
 
 def get_blocked_users(db, user_id: str) -> List[str]:
     """
-    Get list of user IDs blocked by the current user.
-    Used to filter blocked users from social queries.
+    Get ALL user IDs in a block relationship with user_id (bidirectional).
+    Includes users blocked BY user_id AND users who BLOCKED user_id.
+    Apple Guideline 1.2: Ensures mutual invisibility.
     """
-    user = db.users.find_one({"userId": user_id})
-    if user:
-        return user.get("blockedUsers", [])
-    return []
+    from block_system import get_all_blocked_ids
+    return get_all_blocked_ids(db, user_id)
 
 
 # ======================== USER PROFILE EXTENSION ========================
@@ -462,6 +461,14 @@ def follow_user(db, follower_id: str, followed_id: str) -> Dict:
         return {
             "success": False,
             "message": "Cannot follow yourself"
+        }
+    
+    # ✅ Apple 1.2: Block guard — cannot follow blocked user
+    from block_system import is_blocked
+    if is_blocked(db, follower_id, followed_id):
+        return {
+            "success": False,
+            "message": "Interaction not allowed due to block relationship"
         }
     
     # ✅ SECURITY: Rate limit follows (30/hour)

@@ -853,6 +853,10 @@ def startup_event():
         # ✅ Streak v2: Create streak indexes
         from streak_system import ensure_streak_indexes
         ensure_streak_indexes(db)
+        
+        # ✅ Block system: Create block indexes
+        from block_system import ensure_block_indexes
+        ensure_block_indexes(db)
     except Exception as e:
         print(f"❌ Database connection failed: {e}")
 
@@ -1212,6 +1216,11 @@ def get_public_profile(
         viewer_id = user_id  # The authenticated user is the viewer
         
         from social_system import get_social_profile, get_user_rank
+        from block_system import is_blocked
+        
+        # ✅ Apple 1.2: Block guard — bidirectional
+        if viewer_id != target_id and is_blocked(db, viewer_id, target_id):
+            raise HTTPException(status_code=403, detail="Profile unavailable")
         
         # Check if profile is public
         privacy = db.user_privacy.find_one({"userId": target_id}) or {"profilePublic": True}
@@ -1253,6 +1262,11 @@ def follow_user_endpoint(
     try:
         db = get_db()
         from social_system import follow_user
+        from block_system import is_blocked
+        
+        # ✅ Apple 1.2: Block guard — cannot follow blocked user
+        if is_blocked(db, user_id, target_id):
+            raise HTTPException(status_code=403, detail="Interaction not allowed due to block relationship")
         
         result = follow_user(db, user_id, target_id)
         
@@ -1297,6 +1311,15 @@ def like_task_endpoint(
     try:
         db = get_db()
         from social_system import like_task
+        from block_system import is_blocked
+        from bson import ObjectId
+        
+        # ✅ Apple 1.2: Resolve task owner and check block
+        task = db.tasks.find_one({"$or": [{"id": task_id}, {"_id": ObjectId(task_id) if ObjectId.is_valid(task_id) else None}]})
+        if task:
+            task_owner = task.get("userId")
+            if task_owner and task_owner != user_id and is_blocked(db, user_id, task_owner):
+                raise HTTPException(status_code=403, detail="Interaction not allowed due to block relationship")
         
         result = like_task(db, user_id, task_id)
         
@@ -1463,33 +1486,22 @@ def block_user_endpoint(
     user_id: str = Depends(get_current_user)
 ):
     """
-    Block a user. Blocked users won't appear in social feeds, search, or rankings.
+    Block a user. Apple Guideline 1.2 compliant.
+    - Inserts into user_blocks collection
+    - Removes follow relationships in both directions
+    - Cancels pending task shares
+    - Blocked users won't appear in any social surface
     """
     try:
         db = get_db()
+        from block_system import block_user
         
-        # Prevent self-blocking
-        if payload.blockedUserId == user_id:
-            raise HTTPException(status_code=400, detail="Cannot block yourself")
+        result = block_user(db, user_id, payload.blockedUserId)
         
-        # Add to blockedUsers array using $addToSet (prevents duplicates)
-        db.users.update_one(
-            {"userId": user_id},
-            {"$addToSet": {"blockedUsers": payload.blockedUserId}},
-            upsert=True
-        )
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["message"])
         
-        # Also unfollow the blocked user if following
-        try:
-            from social_system import unfollow_user
-            unfollow_user(db, user_id, payload.blockedUserId)
-        except:
-            pass  # Ignore if not following
-        
-        return {
-            "success": True,
-            "message": "User blocked successfully"
-        }
+        return result
         
     except HTTPException:
         raise
@@ -1503,25 +1515,37 @@ def unblock_user_endpoint(
 ):
     """
     Unblock a previously blocked user.
+    Only removes the caller's block; if the other user also blocked, that remains.
     """
     try:
         db = get_db()
+        from block_system import unblock_user
         
-        # Remove from blockedUsers array
-        db.users.update_one(
-            {"userId": user_id},
-            {"$pull": {"blockedUsers": target_id}}
-        )
-        
-        return {
-            "success": True,
-            "message": "User unblocked successfully"
-        }
+        result = unblock_user(db, user_id, target_id)
+        return result
         
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to unblock user: {str(e)}")
+
+@api.get("/social/blocked")
+def get_blocked_users_endpoint(
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Get list of all users blocked by the current user.
+    Used for Settings → Blocked Users screen.
+    """
+    try:
+        db = get_db()
+        from block_system import get_blocked_users_list
+        
+        users = get_blocked_users_list(db, user_id)
+        return {"users": users}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch blocked users: {str(e)}")
 
 # ======================== TASK SHARING ROUTES ========================
 
@@ -1542,6 +1566,11 @@ def create_share(
     try:
         db = get_db()
         from task_sharing import create_task_share
+        from block_system import is_blocked
+        
+        # ✅ Apple 1.2: Block guard — cannot send task to blocked user
+        if is_blocked(db, user_id, payload.recipientId):
+            raise HTTPException(status_code=403, detail="Interaction not allowed due to block relationship")
         
         task_data = {
             "title": payload.title,
