@@ -1347,6 +1347,83 @@ def unlike_task_endpoint(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to unlike task: {str(e)}")
 
+# --- Created Tasks (Paginated) ---
+
+@api.get("/users/{user_id}/created-tasks")
+def get_user_created_tasks_endpoint(
+    user_id: str,
+    cursor: Optional[str] = Query(None),
+    limit: int = Query(10, ge=1, le=50),
+    current_user: str = Depends(get_current_user)
+):
+    """Cursor-paginated created tasks for a user's profile"""
+    try:
+        db = get_db()
+        from social_system import get_created_tasks, get_blocked_users
+        
+        # ✅ Apple 1.2: Block guard
+        blocked_ids = get_blocked_users(db, current_user)
+        if user_id in blocked_ids:
+            raise HTTPException(status_code=403, detail="Profile unavailable")
+        
+        # Privacy check — if not own profile, respect visibility
+        if current_user != user_id:
+            privacy = db.user_privacy.find_one({"userId": user_id}) or {"profilePublic": True, "showStats": True}
+            if not privacy.get("profilePublic", True) or not privacy.get("showStats", True):
+                return {"tasks": [], "nextCursor": None}
+        
+        result = get_created_tasks(
+            db,
+            user_id=user_id,
+            viewer_id=current_user,
+            cursor=cursor,
+            limit=limit
+        )
+        
+        # Sanitize dates
+        for task in result.get("tasks", []):
+            for date_key in ["createdAt", "completedAt"]:
+                if isinstance(task.get(date_key), datetime):
+                    task[date_key] = task[date_key].isoformat().split(".")[0] + "Z"
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch created tasks: {str(e)}")
+
+# --- Task Add (from profile) ---
+
+@api.post("/tasks/{task_id}/add")
+def add_task_from_profile_endpoint(
+    task_id: str,
+    current_user: str = Depends(get_current_user)
+):
+    """Track that a user added a task from another user's profile"""
+    try:
+        db = get_db()
+        from social_system import add_task_from_profile
+        from block_system import is_blocked
+        from bson import ObjectId
+        
+        # ✅ Apple 1.2: Resolve task owner and check block
+        task = db.tasks.find_one({"$or": [{"id": task_id}, {"_id": ObjectId(task_id) if ObjectId.is_valid(task_id) else None}]})
+        if task:
+            task_owner = task.get("userId")
+            if task_owner and task_owner != current_user and is_blocked(db, current_user, task_owner):
+                raise HTTPException(status_code=403, detail="Interaction not allowed due to block relationship")
+        
+        result = add_task_from_profile(db, current_user, task_id)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result.get("message", "Failed to add task"))
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to add task: {str(e)}")
+
 @api.get("/users/{target_id}/followers")
 def get_followers_endpoint(
     target_id: str,

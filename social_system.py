@@ -47,56 +47,175 @@ def calculate_total_co2_saved(db, user_id: str) -> float:
 def get_user_manual_tasks(db, user_id: str, viewer_id: Optional[str] = None, limit: int = 10) -> List[Dict]:
     """
     Fetch user's manual tasks (creatorType != 'system') for profile display.
-    Includes like count and viewer-specific isLiked flag.
-    System-generated (AI) tasks are excluded.
+    Uses cached likeCount/addCount from task documents (no $lookup).
+    Batch-resolves isLiked/isAdded via $in query.
     """
-    pipeline = [
-        {"$match": {
+    tasks_cursor = db.tasks.find(
+        {
             "userId": user_id,
-            "creatorType": {"$ne": "system"},  # Exclude AI/system tasks
-        }},
-        {"$sort": {"createdAt": -1}},  # Most recent first
-        {"$limit": limit},
-        # Lookup like count from task_likes collection
-        {"$lookup": {
-            "from": "task_likes",
-            "let": {"taskId": {"$ifNull": ["$id", {"$toString": "$_id"}]}},
-            "pipeline": [
-                {"$match": {"$expr": {"$eq": ["$taskId", "$$taskId"]}}}
-            ],
-            "as": "likes"
-        }},
-        {"$project": {
-            "_id": 0,
-            "id": {"$ifNull": ["$id", {"$toString": "$_id"}]},
-            "title": 1,
-            "details": 1,
-            "category": 1,
-            "points": 1,
-            "estimatedImpact": 1,
-            "completedAt": 1,
-            "createdAt": 1,
-            "creatorId": {"$ifNull": ["$userId", None]},
-            "likeCount": {"$size": "$likes"},
-            "likerIds": {"$map": {"input": "$likes", "as": "l", "in": "$$l.userId"}}
-        }}
-    ]
-    tasks = list(db.tasks.aggregate(pipeline))
+            "creatorType": {"$ne": "system"},
+        },
+        {
+            "_id": 1, "id": 1, "title": 1, "details": 1, "category": 1,
+            "points": 1, "estimatedImpact": 1, "completedAt": 1,
+            "createdAt": 1, "userId": 1, "likeCount": 1, "addCount": 1,
+        }
+    ).sort("createdAt", -1).limit(limit)
 
-    # Annotate isLiked per task for the viewer
+    tasks = []
+    for doc in tasks_cursor:
+        tasks.append({
+            "id": doc.get("id") or str(doc["_id"]),
+            "title": doc.get("title", ""),
+            "details": doc.get("details"),
+            "category": doc.get("category", ""),
+            "points": doc.get("points", 0),
+            "estimatedImpact": doc.get("estimatedImpact"),
+            "completedAt": doc.get("completedAt"),
+            "createdAt": doc.get("createdAt"),
+            "creatorId": doc.get("userId"),
+            "likeCount": doc.get("likeCount", 0),
+            "addCount": doc.get("addCount", 0),
+        })
+
+    if not tasks:
+        return tasks
+
+    # Batch resolve isLiked / isAdded for the viewer (2 queries, not N)
+    task_ids = [t["id"] for t in tasks]
+
+    liked_ids = set()
+    added_ids = set()
+    if viewer_id:
+        liked_docs = db.task_likes.find(
+            {"userId": viewer_id, "taskId": {"$in": task_ids}},
+            {"taskId": 1}
+        )
+        liked_ids = {d["taskId"] for d in liked_docs}
+
+        added_docs = db.task_adds.find(
+            {"userId": viewer_id, "sourceTaskId": {"$in": task_ids}},
+            {"sourceTaskId": 1}
+        )
+        added_ids = {d["sourceTaskId"] for d in added_docs}
+
     for task in tasks:
-        liker_ids = task.pop("likerIds", [])
-        task["isLiked"] = (viewer_id in liker_ids) if viewer_id else False
+        task["isLiked"] = task["id"] in liked_ids
+        task["isAdded"] = task["id"] in added_ids
 
     return tasks
+
+
+# ======================== CREATED TASKS (Paginated Endpoint) ========================
+
+def get_created_tasks(
+    db,
+    user_id: str,
+    viewer_id: Optional[str] = None,
+    cursor: Optional[str] = None,
+    limit: int = 10
+) -> Dict:
+    """
+    Cursor-based paginated fetch of user's created tasks.
+    O(1) index seek + O(page_size) scan + 2 batch lookups.
+    Cursor format: "<createdAt_isoformat>|<task_id>"
+    """
+    import base64
+
+    query = {
+        "userId": user_id,
+        "creatorType": {"$ne": "system"},
+    }
+
+    # Parse cursor for keyset pagination
+    if cursor:
+        try:
+            decoded = base64.b64decode(cursor).decode("utf-8")
+            cursor_date_str, cursor_id = decoded.rsplit("|", 1)
+            cursor_date = datetime.fromisoformat(cursor_date_str)
+            query["$or"] = [
+                {"createdAt": {"$lt": cursor_date}},
+                {"createdAt": cursor_date, "id": {"$lt": cursor_id}},
+            ]
+        except Exception:
+            pass  # Invalid cursor — start from beginning
+
+    tasks_cursor = db.tasks.find(
+        query,
+        {
+            "_id": 1, "id": 1, "title": 1, "details": 1, "category": 1,
+            "points": 1, "estimatedImpact": 1, "completedAt": 1,
+            "createdAt": 1, "userId": 1, "likeCount": 1, "addCount": 1,
+        }
+    ).sort([("createdAt", -1), ("id", -1)]).limit(limit + 1)  # +1 to detect hasMore
+
+    raw_tasks = list(tasks_cursor)
+    has_more = len(raw_tasks) > limit
+    if has_more:
+        raw_tasks = raw_tasks[:limit]
+
+    tasks = []
+    for doc in raw_tasks:
+        task_id = doc.get("id") or str(doc["_id"])
+        created_at = doc.get("createdAt")
+        tasks.append({
+            "id": task_id,
+            "title": doc.get("title", ""),
+            "details": doc.get("details"),
+            "category": doc.get("category", ""),
+            "points": doc.get("points", 0),
+            "estimatedImpact": doc.get("estimatedImpact"),
+            "completedAt": doc.get("completedAt"),
+            "createdAt": created_at,
+            "creatorId": doc.get("userId"),
+            "likeCount": doc.get("likeCount", 0),
+            "addCount": doc.get("addCount", 0),
+        })
+
+    # Batch resolve isLiked / isAdded
+    task_ids = [t["id"] for t in tasks]
+    liked_ids = set()
+    added_ids = set()
+    if viewer_id and task_ids:
+        liked_docs = db.task_likes.find(
+            {"userId": viewer_id, "taskId": {"$in": task_ids}},
+            {"taskId": 1}
+        )
+        liked_ids = {d["taskId"] for d in liked_docs}
+
+        added_docs = db.task_adds.find(
+            {"userId": viewer_id, "sourceTaskId": {"$in": task_ids}},
+            {"sourceTaskId": 1}
+        )
+        added_ids = {d["sourceTaskId"] for d in added_docs}
+
+    for task in tasks:
+        task["isLiked"] = task["id"] in liked_ids
+        task["isAdded"] = task["id"] in added_ids
+
+    # Build next cursor
+    next_cursor = None
+    if has_more and tasks:
+        last = tasks[-1]
+        last_date = last["createdAt"]
+        if isinstance(last_date, datetime):
+            cursor_str = f"{last_date.isoformat()}|{last['id']}"
+        else:
+            cursor_str = f"{last_date}|{last['id']}"
+        next_cursor = base64.b64encode(cursor_str.encode("utf-8")).decode("utf-8")
+
+    return {
+        "tasks": tasks,
+        "nextCursor": next_cursor,
+    }
 
 
 # ======================== TASK LIKE SYSTEM ========================
 
 def like_task(db, user_id: str, task_id: str) -> Dict:
     """
-    Like a task. Idempotent — duplicate likes are silently ignored.
-    Returns updated like count.
+    Like a task. Idempotent — duplicate likes silently ignored.
+    Uses atomic $inc on cached likeCount.
     """
     # Rate limit likes (60/hour)
     try:
@@ -104,13 +223,16 @@ def like_task(db, user_id: str, task_id: str) -> Dict:
     except RateLimitExceeded:
         return {"success": False, "likeCount": 0, "message": "Too many likes. Please try again later."}
 
-    # Verify the task exists
-    task = db.tasks.find_one({"$or": [{"id": task_id}, {"_id": ObjectId(task_id) if ObjectId.is_valid(task_id) else None}]})
+    # Verify the task exists + get current likeCount
+    task_filter = {"$or": [{"id": task_id}, {"_id": ObjectId(task_id) if ObjectId.is_valid(task_id) else None}]}
+    task = db.tasks.find_one(task_filter)
     if not task:
         return {"success": False, "likeCount": 0, "message": "Task not found."}
 
-    # Upsert to prevent duplicates
-    db.task_likes.update_one(
+    current_count = task.get("likeCount", 0)
+
+    # Upsert to prevent duplicates — only increment if NEW like
+    result = db.task_likes.update_one(
         {"userId": user_id, "taskId": task_id},
         {"$setOnInsert": {
             "userId": user_id,
@@ -121,18 +243,73 @@ def like_task(db, user_id: str, task_id: str) -> Dict:
         upsert=True
     )
 
-    like_count = db.task_likes.count_documents({"taskId": task_id})
-    return {"success": True, "likeCount": like_count}
+    if result.upserted_id:
+        # New like — atomic increment
+        db.tasks.update_one(task_filter, {"$inc": {"likeCount": 1}})
+        return {"success": True, "likeCount": current_count + 1}
+
+    # Already liked — no-op
+    return {"success": True, "likeCount": current_count}
 
 
 def unlike_task(db, user_id: str, task_id: str) -> Dict:
     """
     Unlike a task. Idempotent — calling on an un-liked task is a no-op.
-    Returns updated like count.
+    Uses atomic $inc(-1) on cached likeCount.
     """
-    db.task_likes.delete_one({"userId": user_id, "taskId": task_id})
-    like_count = db.task_likes.count_documents({"taskId": task_id})
-    return {"success": True, "likeCount": like_count}
+    result = db.task_likes.delete_one({"userId": user_id, "taskId": task_id})
+
+    task_filter = {"$or": [{"id": task_id}, {"_id": ObjectId(task_id) if ObjectId.is_valid(task_id) else None}]}
+    task = db.tasks.find_one(task_filter)
+    current_count = task.get("likeCount", 0) if task else 0
+
+    if result.deleted_count > 0 and current_count > 0:
+        # Actually unliked — atomic decrement
+        db.tasks.update_one(task_filter, {"$inc": {"likeCount": -1}})
+        return {"success": True, "likeCount": max(0, current_count - 1)}
+
+    return {"success": True, "likeCount": current_count}
+
+
+# ======================== TASK ADD SYSTEM (Profile "Add to My Tasks") ========================
+
+def add_task_from_profile(db, user_id: str, task_id: str) -> Dict:
+    """
+    Track that a user added a task from another user's profile.
+    Idempotent — duplicate adds silently ignored.
+    Atomically increments addCount on the source task.
+    """
+    # Verify source task exists
+    task_filter = {"$or": [{"id": task_id}, {"_id": ObjectId(task_id) if ObjectId.is_valid(task_id) else None}]}
+    task = db.tasks.find_one(task_filter)
+    if not task:
+        return {"success": False, "addCount": 0, "message": "Task not found."}
+
+    # Cannot add own tasks
+    if task.get("userId") == user_id:
+        return {"success": False, "addCount": task.get("addCount", 0), "message": "Cannot add your own task."}
+
+    current_count = task.get("addCount", 0)
+
+    # Upsert to prevent double-counting
+    result = db.task_adds.update_one(
+        {"userId": user_id, "sourceTaskId": task_id},
+        {"$setOnInsert": {
+            "userId": user_id,
+            "sourceTaskId": task_id,
+            "sourceOwnerId": task.get("userId"),
+            "createdAt": datetime.utcnow()
+        }},
+        upsert=True
+    )
+
+    if result.upserted_id:
+        # New add — atomic increment
+        db.tasks.update_one(task_filter, {"$inc": {"addCount": 1}})
+        return {"success": True, "addCount": current_count + 1}
+
+    # Already added — no-op
+    return {"success": True, "addCount": current_count}
 
 
 # ======================== BLOCKED USERS HELPER ========================
@@ -732,6 +909,13 @@ def ensure_social_indexes(db):
     # Task likes indexes (unique compound to prevent duplicate likes)
     db.task_likes.create_index([("userId", 1), ("taskId", 1)], unique=True)
     db.task_likes.create_index([("taskId", 1)])  # Fast like count lookups
+    
+    # Task adds indexes (unique compound to prevent double-add tracking)
+    db.task_adds.create_index([("userId", 1), ("sourceTaskId", 1)], unique=True)
+    db.task_adds.create_index([("sourceTaskId", 1)])  # Batch isAdded lookups
+    
+    # Created tasks cursor pagination (covers userId + creatorType filter + sort)
+    db.tasks.create_index([("userId", 1), ("creatorType", 1), ("createdAt", -1)])
     
     print("✅ Social indexes created")
 
