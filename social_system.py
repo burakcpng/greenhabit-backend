@@ -498,7 +498,7 @@ def update_user_profile(db, user_id: str, display_name: Optional[str], bio: Opti
         upsert=True
     )
     
-    return get_social_profile(db, user_id)
+    return get_social_profile(db, user_id, viewer_id=user_id)
 
 
 # ======================== RANKING SYSTEM ========================

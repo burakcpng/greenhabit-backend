@@ -1166,7 +1166,7 @@ def get_social_profile_endpoint(user_id: str = Depends(get_current_user)):
         # user_id provided by Depends
         from social_system import get_social_profile, get_user_rank
         
-        profile = get_social_profile(db, user_id)
+        profile = get_social_profile(db, user_id, viewer_id=user_id)
         
         # Add rank
         rank_info = get_user_rank(db, user_id)
