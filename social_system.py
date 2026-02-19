@@ -629,7 +629,7 @@ def get_user_rank(db, user_id: str) -> Dict:
 
 # ======================== FOLLOW SYSTEM ========================
 
-def follow_user(db, follower_id: str, followed_id: str) -> Dict:
+async def follow_user(db, follower_id: str, followed_id: str) -> Dict:
     """
     Follow a user
     Returns success status and updated counts
@@ -676,21 +676,20 @@ def follow_user(db, follower_id: str, followed_id: str) -> Dict:
         "createdAt": datetime.utcnow()
     })
     
-    # TRIGGER PUSH NOTIFICATION
+    # TRIGGER PUSH NOTIFICATION (await instead of asyncio.run)
     try:
         from notification_system import send_push_notification
-        import asyncio
         
         # Get follower name
         follower = db.user_profiles.find_one({"userId": follower_id})
         follower_name = follower.get("displayName", "Someone") if follower else "Someone"
         
-        asyncio.run(send_push_notification(
+        await send_push_notification(
             db, 
             followed_id, 
             "New Follower! 👤", 
             f"{follower_name} started following you."
-        ))
+        )
     except Exception as e:
         print(f"Failed to send push: {e}")
     

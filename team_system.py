@@ -455,7 +455,7 @@ def reject_invitation(db, invitation_id: str, user_id: str) -> Dict:
 
 # ======================== TEAM TASK SHARING ========================
 
-def share_task_to_team(db, team_id: str, sender_id: str, task_data: Dict) -> Dict:
+async def share_task_to_team(db, team_id: str, sender_id: str, task_data: Dict) -> Dict:
     """Share a task to all team members (creator only)"""
     team = db.teams.find_one({"id": team_id})
     if not team:
@@ -501,17 +501,16 @@ def share_task_to_team(db, team_id: str, sender_id: str, task_data: Dict) -> Dic
         db.team_task_shares.insert_one(share_doc)
         shares_created += 1
         
-        # TRIGGER PUSH NOTIFICATION
+        # TRIGGER PUSH NOTIFICATION (await instead of asyncio.run)
         try:
             from notification_system import send_push_notification
-            import asyncio
             
-            asyncio.run(send_push_notification(
+            await send_push_notification(
                 db, 
                 member["userId"], 
                 f"New Team Task from {sender_name}", 
                 f"Task: {task_data.get('title', 'Eco Task')} - Tap to view."
-            ))
+            )
         except Exception as e:
             print(f"Failed to send push to member: {e}")
     

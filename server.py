@@ -857,6 +857,10 @@ def startup_event():
         # ✅ Block system: Create block indexes
         from block_system import ensure_block_indexes
         ensure_block_indexes(db)
+        
+        # ✅ APNs: Validate push notification configuration
+        from notification_system import validate_apns_config
+        validate_apns_config()
     except Exception as e:
         print(f"❌ Database connection failed: {e}")
 
@@ -1254,7 +1258,7 @@ def get_public_profile(
 # --- Follow System Endpoints ---
 
 @api.post("/users/{target_id}/follow")
-def follow_user_endpoint(
+async def follow_user_endpoint(
     target_id: str,
     user_id: str = Depends(get_current_user)
 ):
@@ -1268,7 +1272,7 @@ def follow_user_endpoint(
         if is_blocked(db, user_id, target_id):
             raise HTTPException(status_code=403, detail="Interaction not allowed due to block relationship")
         
-        result = follow_user(db, user_id, target_id)
+        result = await follow_user(db, user_id, target_id)
         
         if not result["success"]:
             raise HTTPException(status_code=400, detail=result["message"])
@@ -2045,7 +2049,7 @@ def reject_invitation_endpoint(
 # --- Team Task Sharing ---
 
 @api.post("/teams/{team_id}/share-task")
-def share_task_to_team_endpoint(
+async def share_task_to_team_endpoint(
     team_id: str,
     payload: ShareTaskToTeamPayload,
     user_id: str = Depends(get_current_user)
@@ -2063,7 +2067,7 @@ def share_task_to_team_endpoint(
             "estimatedImpact": payload.estimatedImpact
         }
         
-        result = share_task_to_team(db, team_id, user_id, task_data)
+        result = await share_task_to_team(db, team_id, user_id, task_data)
         
         if not result["success"]:
             raise HTTPException(status_code=400, detail=result["message"])
