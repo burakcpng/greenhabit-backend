@@ -538,6 +538,39 @@ def update_task(
             response["newAchievements"] = new_achievements
             response["streakInfo"] = streak_info
             response["celebration"] = True  # Frontend trigger
+            
+            # ✅ ULTRATHINK: Add Missing Push Notifications (Apple Guideline Compliance & UX)
+            try:
+                from notification_system import send_push_notification
+                import asyncio
+                
+                # Get current user's name for notifications
+                user_profile = db.user_profiles.find_one({"userId": user_id})
+                user_name = user_profile.get("displayName", "Someone") if user_profile else "Someone"
+                
+                # 1. SERIES NOTIFICATION: Trigger if they hit a milestone
+                current_streak = streak_info.get("currentStreak", 0)
+                milestones = [3, 7, 30]
+                if current_streak in milestones:
+                    asyncio.create_task(send_push_notification(
+                        db,
+                        user_id,
+                        "Streak Milestone! 🔥",
+                        f"Awesome! You've reached a {current_streak}-day eco streak!"
+                    ))
+                
+                # 2. TASK SUBMISSION NOTIFICATION: Trigger if task was shared by a team member
+                shared_by_id = task.get("sharedBy")
+                if shared_by_id and shared_by_id != user_id:
+                    task_title = task.get("title", "a shared task")
+                    asyncio.create_task(send_push_notification(
+                        db,
+                        shared_by_id,
+                        "Task Completed! ✅",
+                        f"{user_name} just completed '{task_title}'!"
+                    ))
+            except Exception as push_err:
+                print(f"⚠️ Failed to queue push notification: {push_err}")
         
         return response
         
