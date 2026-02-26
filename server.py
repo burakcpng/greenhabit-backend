@@ -2604,7 +2604,7 @@ async def apple_app_site_association():
             "apps": [],
             "details": [
                 {
-                    "appID": "9264X3737M.burakcpng.GreenHabit", 
+                    "appID": "9264X3737M.com.burakcpng.GreenHabit",
                     "paths": ["/share/*", "/user/*"]  # ✅ Added /user/* for moderation deep links
                 }
             ]
