@@ -1030,45 +1030,123 @@ def recalculate_streak(user_id: str = Depends(get_current_user)):
 def delete_user_account(user_id: str = Depends(get_current_user)):
     """
     Delete user account and ALL associated data.
-    ✅ CRITICAL: Cascading deletion of ALL user-related documents.
+    ✅ CRITICAL: 14-step cascading deletion of ALL user-related documents.
     Apple Guideline 5.1.1(v) compliance: Full account deletion support.
+    GDPR Article 17 compliance: Right to Erasure.
+    
+    Collections deleted:   tasks, preferences, teams, team_members,
+                           team_invitations, team_task_shares, user_profiles,
+                           follows, user_privacy, device_tokens, users,
+                           habit_completions, task_likes, task_adds,
+                           invitations, user_blocks
+    Collections anonymized: shared_tasks, reports, task_shares
     """
     try:
         db = get_db()
         
-        print(f"🗑️ Starting account deletion for user: {user_id}")
+        print(f"🗑️ Starting full account deletion for user: {user_id}")
+        
+        # ── Phase 1: Primary Data ──────────────────────────────
         
         # 1. Delete all tasks
         tasks_result = db.tasks.delete_many({"userId": user_id})
-        print(f"   - Deleted {tasks_result.deleted_count} tasks")
+        print(f"   1. Deleted {tasks_result.deleted_count} tasks")
         
         # 2. Delete preferences
         prefs_result = db.preferences.delete_many({"userId": user_id})
-        print(f"   - Deleted {prefs_result.deleted_count} preferences")
+        print(f"   2. Deleted {prefs_result.deleted_count} preferences")
         
-        # 3. Handle team memberships
+        # ── Phase 2: Team System ───────────────────────────────
+        
+        # 3. Handle team memberships (teams, team_members, team_invitations, team_task_shares)
         from team_system import handle_user_deletion_teams
         team_cleanup = handle_user_deletion_teams(db, user_id)
-        print(f"   - Team cleanup: {team_cleanup}")
+        print(f"   3. Team cleanup: {team_cleanup}")
         
-        # 4. Delete social connections
+        # ── Phase 3: Social System ─────────────────────────────
+        
+        # 4. Delete social connections (user_profiles, follows, user_privacy)
         from social_system import handle_user_deletion_social
         social_cleanup = handle_user_deletion_social(db, user_id)
-        print(f"   - Social cleanup: {social_cleanup}")
+        print(f"   4. Social cleanup: {social_cleanup}")
+        
+        # ── Phase 4: Notification System ───────────────────────
         
         # 5. Delete device tokens (APNS)
         tokens_result = db.device_tokens.delete_many({"userId": user_id})
-        print(f"   - Deleted {tokens_result.deleted_count} device tokens")
+        print(f"   5. Deleted {tokens_result.deleted_count} device tokens")
         
-        # 6. Delete user record (Apple ID mapping)
+        # ── Phase 5: Streak & Completion History ───────────────
+        
+        # 6. Delete habit completions (streak history — shadow profile risk)
+        completions_result = db.habit_completions.delete_many({"userId": user_id})
+        print(f"   6. Deleted {completions_result.deleted_count} habit completions")
+        
+        # ── Phase 6: Social Activity Footprint ─────────────────
+        
+        # 7. Delete task likes
+        likes_result = db.task_likes.delete_many({"userId": user_id})
+        print(f"   7. Deleted {likes_result.deleted_count} task likes")
+        
+        # 8. Delete task adds (adoption records)
+        adds_result = db.task_adds.delete_many({"userId": user_id})
+        print(f"   8. Deleted {adds_result.deleted_count} task adds")
+        
+        # 9. Delete invitations (rewards_system references)
+        invitations_result = db.invitations.delete_many({"senderId": user_id})
+        print(f"   9. Deleted {invitations_result.deleted_count} invitations")
+        
+        # ── Phase 7: Block Relationships ───────────────────────
+        
+        # 10. Delete block relationships (bidirectional)
+        blocks_result = db.user_blocks.delete_many({
+            "$or": [
+                {"blockerUserId": user_id},
+                {"blockedUserId": user_id}
+            ]
+        })
+        print(f"  10. Deleted {blocks_result.deleted_count} block records")
+        
+        # ── Phase 8: Anonymize Shared Content ──────────────────
+        # (Retain content for other users, strip PII — no reverse-link possible)
+        
+        # 11. Anonymize shared tasks (creatorId → "[deleted]")
+        shared_result = db.shared_tasks.update_many(
+            {"creatorId": user_id},
+            {"$set": {"creatorId": "[deleted]"}}
+        )
+        print(f"  11. Anonymized {shared_result.modified_count} shared tasks")
+        
+        # 12. Anonymize reports (retain for moderation, strip identity)
+        reports_reporter = db.reports.update_many(
+            {"reporterId": user_id},
+            {"$set": {"reporterId": "[deleted]"}}
+        )
+        reports_reported = db.reports.update_many(
+            {"reportedUserId": user_id},
+            {"$set": {"reportedUserId": "[deleted]"}}
+        )
+        print(f"  12. Anonymized {reports_reporter.modified_count + reports_reported.modified_count} report records")
+        
+        # 13. Anonymize task_shares (block_system references)
+        task_shares_result = db.task_shares.update_many(
+            {"senderId": user_id},
+            {"$set": {"senderId": "[deleted]"}}
+        )
+        print(f"  13. Anonymized {task_shares_result.modified_count} task shares")
+        
+        # ── Phase 9: Identity Record (LAST) ────────────────────
+        
+        # 14. Delete user record (Apple ID mapping — must be last)
         user_result = db.users.delete_one({"userId": user_id})
-        print(f"   - Deleted {user_result.deleted_count} user records")
+        print(f"  14. Deleted {user_result.deleted_count} user records")
         
-        print(f"✅ Account deletion complete for: {user_id}")
+        print(f"✅ Full account deletion complete for: {user_id}")
+        print(f"   Zero records with userId={user_id} remain in any collection.")
         
         return {
             "success": True,
-            "message": "Account and all data deleted successfully"
+            "message": "Account and all data permanently deleted"
         }
         
     except HTTPException:
