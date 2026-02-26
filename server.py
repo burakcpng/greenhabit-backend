@@ -2598,14 +2598,16 @@ from fastapi.responses import JSONResponse, HTMLResponse
 
 @app.get("/.well-known/apple-app-site-association")
 async def apple_app_site_association():
-    """Serve AASA file for iOS Universal Links"""
+    """Serve AASA file for iOS Universal Links (v2 format)"""
     content = {
         "applinks": {
-            "apps": [],
             "details": [
                 {
-                    "appID": "9264X3737M.com.burakcpng.GreenHabit",
-                    "paths": ["/share/*", "/user/*"]  # ✅ Added /user/* for moderation deep links
+                    "appIDs": ["9264X3737M.burakcpng.GreenHabit"],
+                    "components": [
+                        {"/": "/share/*", "comment": "Task Sharing"},
+                        {"/": "/user/*",  "comment": "User Profile (Moderation)"}
+                    ]
                 }
             ]
         }
@@ -2631,7 +2633,6 @@ def user_profile_redirect(user_id: str):
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>View Profile • GreenHabit</title>
-        <meta http-equiv="refresh" content="0;url=greenhabit://user?id={user_id}">
         <style>
             :root {{
                 --bg-color: #0b1c2d;
@@ -2669,7 +2670,13 @@ def user_profile_redirect(user_id: str):
         <div class="logo">🌿</div>
         <h1>Opening GreenHabit...</h1>
         <p>If the app doesn't open, tap the button below.</p>
-        <a href="greenhabit://user?id={user_id}" class="btn">Open in App</a>
+        <a id="openBtn" href="greenhabit://user?id={user_id}" class="btn">Open in App</a>
+        <script>
+            // Attempt custom scheme redirect via JS (meta-refresh is blocked by iOS Safari)
+            setTimeout(function() {{
+                window.location.href = "greenhabit://user?id={user_id}";
+            }}, 300);
+        </script>
     </body>
     </html>
     """
