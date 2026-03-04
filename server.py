@@ -511,10 +511,10 @@ def update_task(
         
         # If completing task, calculate rewards and check achievements
         if is_completing_task and result.modified_count > 0:
-            from streak_system import record_completion, InvalidCompletionError
+            from streak_system import record_completion, InvalidCompletionError, safe_streak_fallback
             from rewards_system import calculate_rewards, check_new_achievements
             
-            # ✅ Streak v2: Record completion with timezone safety
+            # ✅ Streak v3: Record completion with timezone safety
             local_date = payload.completionLocalDate or task.get("date", date.today().isoformat())
             tz_id = payload.timezoneIdentifier or "UTC"
             
@@ -522,11 +522,8 @@ def update_task(
                 streak_info = record_completion(db, user_id, local_date, tz_id, source="online")
             except InvalidCompletionError as e:
                 print(f"⚠️ Streak validation warning (non-blocking): {e}")
-                # Non-blocking: still complete the task, just use fallback streak
-                streak_info = {
-                    "currentStreak": 0, "longestStreak": 0,
-                    "lastCompletedDate": local_date, "isDuplicate": False
-                }
+                # ✅ v3 FIX: Return STORED streak, never hardcode 0
+                streak_info = safe_streak_fallback(db, user_id)
             
             # Calculate rewards with the streak value
             rewards = calculate_rewards(db, user_id, task, streak_info.get("currentStreak", 0))
@@ -960,18 +957,13 @@ def get_achievements(user_id: str = Depends(get_current_user)):
 
 @api.get("/streak")
 def get_streak(user_id: str = Depends(get_current_user)):
-    """Get streak information — reads stored streak (O(1))"""
+    """Get streak information with read-time decay — O(1) read + TZ date math."""
     try:
         db = get_db()
-        # user_id provided by Depends
         
-        profile = db.user_profiles.find_one({"userId": user_id}) or {}
+        from streak_system import get_streak_with_decay
         
-        return {
-            "currentStreak": profile.get("currentStreak", 0),
-            "longestStreak": profile.get("longestStreak", 0),
-            "lastCompletedDate": profile.get("lastCompletedLocalDate")
-        }
+        return get_streak_with_decay(db, user_id)
     except HTTPException:
         raise
     except Exception as e:
@@ -997,28 +989,17 @@ def sync_completions(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to sync completions: {str(e)}")
 
-# ✅ Streak v2: Force recalculate streak from completions (recovery endpoint)
+# ✅ Streak v3: Force recalculate streak from completions (recovery endpoint)
 @api.post("/streak/recalculate")
 def recalculate_streak(user_id: str = Depends(get_current_user)):
     """Recalculate streak from habit_completions — use for recovery."""
     try:
         db = get_db()
         
-        from streak_system import calculate_streak_from_completions
+        from streak_system import _recalculate_and_store
         
-        streak_info = calculate_streak_from_completions(db, user_id)
-        
-        # Store recalculated values
-        db.user_profiles.update_one(
-            {"userId": user_id},
-            {"$set": {
-                "currentStreak": streak_info["currentStreak"],
-                "longestStreak": streak_info["longestStreak"],
-                "lastCompletedLocalDate": streak_info["lastCompletedDate"]
-            }}
-        )
-        
-        return streak_info
+        # ✅ v3: Delegates storage to streak_system (includes streakVersion bump)
+        return _recalculate_and_store(db, user_id)
     except HTTPException:
         raise
     except Exception as e:
