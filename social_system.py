@@ -54,6 +54,7 @@ def get_user_manual_tasks(db, user_id: str, viewer_id: Optional[str] = None, lim
         {
             "userId": user_id,
             "creatorType": {"$ne": "system"},
+            "sharedBy": {"$in": [None]},  # ✅ Only show user's OWN created tasks, not adopted ones
         },
         {
             "_id": 1, "id": 1, "title": 1, "details": 1, "category": 1,
