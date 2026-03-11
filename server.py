@@ -2275,7 +2275,6 @@ def get_team_leaderboard_endpoint(
 class UpdateTeamSettingsPayload(BaseModel):
     whoCanInvite: Optional[str] = None
     whoCanShareTasks: Optional[str] = None
-    whoCanEditTasks: Optional[str] = None
     whoCanRemoveMembers: Optional[str] = None
     whoCanChangeSettings: Optional[str] = None
 

@@ -24,7 +24,6 @@ VALID_ROLES = set(ROLE_HIERARCHY.keys())
 DEFAULT_TEAM_SETTINGS = {
     "whoCanInvite": "moderator",       # minimum role to invite members
     "whoCanShareTasks": "moderator",   # minimum role to share tasks
-    "whoCanEditTasks": "moderator",    # minimum role to edit team tasks
     "whoCanRemoveMembers": "admin",    # minimum role to kick members
     "whoCanChangeSettings": "admin",   # minimum role to modify these settings
 }
