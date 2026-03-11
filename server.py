@@ -1858,6 +1858,8 @@ def reject_share_endpoint(
 
 class CreateTeamPayload(BaseModel):
     name: str = Field(..., min_length=2, max_length=50)
+    description: Optional[str] = ""
+    icon: Optional[str] = "person.3.fill"
     invitedUserIds: Optional[List[str]] = None
 
 class InviteToTeamPayload(BaseModel):
@@ -1888,7 +1890,7 @@ def create_team_endpoint(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         
-        result = create_team(db, user_id, payload.name, payload.invitedUserIds)
+        result = create_team(db, user_id, payload.name, payload.description or "", payload.icon or "person.3.fill", payload.invitedUserIds)
         
         if not result["success"]:
             raise HTTPException(status_code=400, detail=result["message"])
@@ -2266,6 +2268,155 @@ def get_team_leaderboard_endpoint(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get leaderboard: {str(e)}")
+
+
+# --- Team Settings, Role Management & Ownership ---
+
+class UpdateTeamSettingsPayload(BaseModel):
+    whoCanInvite: Optional[str] = None
+    whoCanShareTasks: Optional[str] = None
+    whoCanEditTasks: Optional[str] = None
+    whoCanRemoveMembers: Optional[str] = None
+    whoCanChangeSettings: Optional[str] = None
+
+class UpdateTeamInfoPayload(BaseModel):
+    name: Optional[str] = Field(None, min_length=2, max_length=50)
+    description: Optional[str] = Field(None, max_length=200)
+    icon: Optional[str] = None
+
+class UpdateMemberRolePayload(BaseModel):
+    role: str
+
+class TransferOwnershipPayload(BaseModel):
+    newOwnerId: str
+
+
+@api.get("/teams/{team_id}/settings")
+def get_team_settings_endpoint(
+    team_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    """Get team settings (any member)"""
+    try:
+        db = get_db()
+        from team_system import get_team_settings_data
+        
+        result = get_team_settings_data(db, team_id, user_id)
+        if not result.get("success", False):
+            raise HTTPException(status_code=403, detail=result.get("message", "Access denied"))
+        
+        return result["settings"]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get settings: {str(e)}")
+
+
+@api.patch("/teams/{team_id}/settings")
+def update_team_settings_endpoint(
+    team_id: str,
+    payload: UpdateTeamSettingsPayload,
+    user_id: str = Depends(get_current_user)
+):
+    """Update team permission policies (requires change_settings permission)"""
+    try:
+        db = get_db()
+        from team_system import update_team_settings
+        
+        settings_data = {k: v for k, v in payload.dict(exclude_unset=True).items() if v is not None}
+        result = update_team_settings(db, team_id, user_id, settings_data)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=403, detail=result["message"])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update settings: {str(e)}")
+
+
+@api.patch("/teams/{team_id}/info")
+def update_team_info_endpoint(
+    team_id: str,
+    payload: UpdateTeamInfoPayload,
+    user_id: str = Depends(get_current_user)
+):
+    """Update team name, description, icon (requires change_settings permission)"""
+    try:
+        db = get_db()
+        from team_system import update_team_info
+        
+        # Apple Guideline 1.2: Content safety check on name
+        if payload.name:
+            try:
+                ProfanityFilter.validate_content(payload.name, "Team Name")
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+        
+        if payload.description:
+            try:
+                ProfanityFilter.validate_content(payload.description, "Team Description")
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+        
+        result = update_team_info(db, team_id, user_id, payload.name, payload.description, payload.icon)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=403, detail=result["message"])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update team info: {str(e)}")
+
+
+@api.patch("/teams/{team_id}/members/{target_user_id}/role")
+def update_member_role_endpoint(
+    team_id: str,
+    target_user_id: str,
+    payload: UpdateMemberRolePayload,
+    user_id: str = Depends(get_current_user)
+):
+    """Change a member's role (admin+ only)"""
+    try:
+        db = get_db()
+        from team_system import update_member_role
+        
+        result = update_member_role(db, team_id, user_id, target_user_id, payload.role)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=403, detail=result["message"])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update role: {str(e)}")
+
+
+@api.post("/teams/{team_id}/transfer-ownership")
+def transfer_ownership_endpoint(
+    team_id: str,
+    payload: TransferOwnershipPayload,
+    user_id: str = Depends(get_current_user)
+):
+    """Transfer team ownership (creator only)"""
+    try:
+        db = get_db()
+        from team_system import transfer_ownership
+        
+        result = transfer_ownership(db, team_id, user_id, payload.newOwnerId)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=403, detail=result["message"])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to transfer ownership: {str(e)}")
 
 
 # ======================== USER SEARCH ROUTES ========================

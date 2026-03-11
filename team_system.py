@@ -1,16 +1,129 @@
 # Team System
 # Backend logic for team creation, invitations, task sharing, and stats
 # Each user can only belong to ONE team at a time
+# RBAC: creator → admin → moderator → member
 
 from datetime import datetime
 from typing import Dict, List, Optional
 from bson import ObjectId
 import uuid
+from fastapi import HTTPException
+
+
+# ======================== RBAC ROLE HIERARCHY ========================
+
+ROLE_HIERARCHY = {
+    "creator": 4,
+    "admin": 3,
+    "moderator": 2,
+    "member": 1,
+}
+
+VALID_ROLES = set(ROLE_HIERARCHY.keys())
+
+DEFAULT_TEAM_SETTINGS = {
+    "whoCanInvite": "moderator",       # minimum role to invite members
+    "whoCanShareTasks": "moderator",   # minimum role to share tasks
+    "whoCanEditTasks": "moderator",    # minimum role to edit team tasks
+    "whoCanRemoveMembers": "admin",    # minimum role to kick members
+    "whoCanChangeSettings": "admin",   # minimum role to modify these settings
+}
+
+# Maps setting keys to human-readable action names
+PERMISSION_ACTIONS = {
+    "invite": "whoCanInvite",
+    "share_tasks": "whoCanShareTasks",
+    "edit_tasks": "whoCanEditTasks",
+    "remove_members": "whoCanRemoveMembers",
+    "change_settings": "whoCanChangeSettings",
+}
+
+
+# ======================== PERMISSION MANAGER ========================
+
+class PermissionManager:
+    """Centralized RBAC permission gate for all team actions."""
+
+    @staticmethod
+    def get_role_level(role: str) -> int:
+        """Get numeric hierarchy level for a role. Unknown roles get 0."""
+        return ROLE_HIERARCHY.get(role, 0)
+
+    @staticmethod
+    def has_minimum_role(user_role: str, required_role: str) -> bool:
+        """Check if user_role meets or exceeds the required_role level."""
+        return PermissionManager.get_role_level(user_role) >= PermissionManager.get_role_level(required_role)
+
+    @staticmethod
+    def get_member_role(db, team_id: str, user_id: str) -> Optional[str]:
+        """Look up a user's role in a team. Returns None if not a member."""
+        member = db.team_members.find_one({"teamId": team_id, "userId": user_id})
+        return member.get("role", "member") if member else None
+
+    @staticmethod
+    def get_team_settings(db, team_id: str) -> Dict:
+        """
+        Get team settings with lazy migration.
+        If no settings document exists, create one with defaults.
+        """
+        settings = db.team_settings.find_one({"teamId": team_id})
+        if settings:
+            # Merge with defaults for forward-compat (new settings keys)
+            merged = dict(DEFAULT_TEAM_SETTINGS)
+            for key in DEFAULT_TEAM_SETTINGS:
+                if key in settings:
+                    merged[key] = settings[key]
+            return merged
+
+        # Lazy migration: create default settings for existing teams
+        settings_doc = {
+            "teamId": team_id,
+            **DEFAULT_TEAM_SETTINGS,
+            "createdAt": datetime.utcnow(),
+            "updatedAt": datetime.utcnow(),
+        }
+        db.team_settings.insert_one(settings_doc)
+        return dict(DEFAULT_TEAM_SETTINGS)
+
+    @staticmethod
+    def can_perform(db, team_id: str, user_id: str, action: str) -> bool:
+        """
+        Check if a user can perform an action on a team.
+        action: one of 'invite', 'share_tasks', 'edit_tasks', 'remove_members', 'change_settings'
+        """
+        user_role = PermissionManager.get_member_role(db, team_id, user_id)
+        if not user_role:
+            return False
+
+        # Creator can always do everything
+        if user_role == "creator":
+            return True
+
+        settings_key = PERMISSION_ACTIONS.get(action)
+        if not settings_key:
+            return False
+
+        settings = PermissionManager.get_team_settings(db, team_id)
+        required_role = settings.get(settings_key, "admin")
+
+        return PermissionManager.has_minimum_role(user_role, required_role)
+
+    @staticmethod
+    def check_permission(db, team_id: str, user_id: str, action: str) -> None:
+        """
+        Assert that a user can perform an action. Raises HTTPException(403) on failure.
+        Use this in route handlers for clean error propagation.
+        """
+        if not PermissionManager.can_perform(db, team_id, user_id, action):
+            raise HTTPException(
+                status_code=403,
+                detail=f"You don't have permission to {action.replace('_', ' ')}"
+            )
 
 
 # ======================== TEAM CRUD ========================
 
-def create_team(db, creator_id: str, team_name: str, invited_user_ids: List[str] = None) -> Dict:
+def create_team(db, creator_id: str, team_name: str, description: str = "", icon: str = "person.3.fill", invited_user_ids: List[str] = None) -> Dict:
     """Create a new team. Creator becomes the team owner."""
     
     # Check if user already in a team
@@ -34,6 +147,8 @@ def create_team(db, creator_id: str, team_name: str, invited_user_ids: List[str]
     team_doc = {
         "id": team_id,
         "name": team_name.strip(),
+        "description": description.strip() if description else "",
+        "icon": icon or "person.3.fill",
         "creatorId": creator_id,
         "creatorName": creator_name,
         "memberCount": 1,
@@ -42,6 +157,15 @@ def create_team(db, creator_id: str, team_name: str, invited_user_ids: List[str]
     }
     
     db.teams.insert_one(team_doc)
+    
+    # Create default team settings
+    settings_doc = {
+        "teamId": team_id,
+        **DEFAULT_TEAM_SETTINGS,
+        "createdAt": datetime.utcnow(),
+        "updatedAt": datetime.utcnow(),
+    }
+    db.team_settings.insert_one(settings_doc)
     
     # Add creator as team member
     member_doc = {
@@ -78,7 +202,7 @@ def get_team(db, team_id: str) -> Optional[Dict]:
 
 
 def get_my_team(db, user_id: str) -> Optional[Dict]:
-    """Get user's current team"""
+    """Get user's current team with role and settings"""
     membership = db.team_members.find_one({"userId": user_id})
     if not membership:
         return None
@@ -95,6 +219,9 @@ def get_my_team(db, user_id: str) -> Optional[Dict]:
     team = sanitize_team_doc(team)
     team["myRole"] = membership["role"]
     
+    # Include team settings for client-side permission gating
+    team["settings"] = PermissionManager.get_team_settings(db, team["id"])
+    
     return team
 
 
@@ -104,11 +231,16 @@ def delete_team(db, team_id: str, user_id: str) -> Dict:
     if not team:
         return {"success": False, "message": "Team not found"}
     
-    if team["creatorId"] != user_id:
+    # Only creator can delete team
+    user_role = PermissionManager.get_member_role(db, team_id, user_id)
+    if user_role != "creator":
         return {"success": False, "message": "Only the team creator can delete the team"}
     
     # Remove all members
     db.team_members.delete_many({"teamId": team_id})
+    
+    # Remove team settings
+    db.team_settings.delete_many({"teamId": team_id})
     
     # Remove all pending invitations
     db.team_invitations.delete_many({"teamId": team_id})
@@ -123,13 +255,14 @@ def delete_team(db, team_id: str, user_id: str) -> Dict:
 
 
 def leave_team(db, team_id: str, user_id: str) -> Dict:
-    """Leave a team (members only, not creator)"""
+    """Leave a team (members only, creator must transfer ownership first)"""
     team = db.teams.find_one({"id": team_id})
     if not team:
         return {"success": False, "message": "Team not found"}
     
-    if team["creatorId"] == user_id:
-        return {"success": False, "message": "Creator cannot leave the team. Delete it instead."}
+    user_role = PermissionManager.get_member_role(db, team_id, user_id)
+    if user_role == "creator":
+        return {"success": False, "message": "Creator cannot leave the team. Transfer ownership or delete it instead."}
     
     membership = db.team_members.find_one({"teamId": team_id, "userId": user_id})
     if not membership:
@@ -179,21 +312,32 @@ def get_team_members(db, team_id: str) -> List[Dict]:
     return members
 
 
-def remove_member(db, team_id: str, creator_id: str, target_user_id: str) -> Dict:
-    """Remove a member from team (creator only)"""
+def remove_member(db, team_id: str, actor_id: str, target_user_id: str) -> Dict:
+    """Remove a member from team (requires remove_members permission + higher role)"""
     team = db.teams.find_one({"id": team_id})
     if not team:
         return {"success": False, "message": "Team not found"}
     
-    if team["creatorId"] != creator_id:
-        return {"success": False, "message": "Only the team creator can remove members"}
+    # RBAC: Check remove_members permission
+    actor_role = PermissionManager.get_member_role(db, team_id, actor_id)
+    if not actor_role:
+        return {"success": False, "message": "You are not a member of this team"}
     
-    if target_user_id == creator_id:
-        return {"success": False, "message": "Cannot remove yourself. Delete the team instead."}
+    if not PermissionManager.can_perform(db, team_id, actor_id, "remove_members"):
+        return {"success": False, "message": "You don't have permission to remove members"}
+    
+    if target_user_id == actor_id:
+        return {"success": False, "message": "Cannot remove yourself. Leave the team instead."}
     
     membership = db.team_members.find_one({"teamId": team_id, "userId": target_user_id})
     if not membership:
         return {"success": False, "message": "User is not a member of this team"}
+    
+    # RBAC: Cannot remove someone of equal or higher role
+    target_role = membership.get("role", "member")
+    if not PermissionManager.has_minimum_role(actor_role, target_role) or \
+       PermissionManager.get_role_level(actor_role) <= PermissionManager.get_role_level(target_role):
+        return {"success": False, "message": "Cannot remove a member with equal or higher role"}
     
     # Remove member
     db.team_members.delete_one({"teamId": team_id, "userId": target_user_id})
@@ -210,17 +354,17 @@ def remove_member(db, team_id: str, creator_id: str, target_user_id: str) -> Dic
     return {"success": True, "message": "Member removed from team"}
 
 
-def update_member_permissions(db, team_id: str, creator_id: str, target_user_id: str, can_share_tasks: bool) -> Dict:
-    """Update member's permissions (creator only)"""
+def update_member_permissions(db, team_id: str, actor_id: str, target_user_id: str, can_share_tasks: bool) -> Dict:
+    """Update member's legacy canShareTasks permission (requires change_settings permission)"""
     team = db.teams.find_one({"id": team_id})
     if not team:
         return {"success": False, "message": "Team not found"}
     
-    if team["creatorId"] != creator_id:
-        return {"success": False, "message": "Only the team creator can update permissions"}
+    if not PermissionManager.can_perform(db, team_id, actor_id, "change_settings"):
+        return {"success": False, "message": "You don't have permission to update settings"}
     
-    if target_user_id == creator_id:
-        return {"success": False, "message": "Cannot modify creator permissions"}
+    if target_user_id == actor_id:
+        return {"success": False, "message": "Cannot modify your own permissions"}
     
     membership = db.team_members.find_one({"teamId": team_id, "userId": target_user_id})
     if not membership:
@@ -240,17 +384,15 @@ def update_member_permissions(db, team_id: str, creator_id: str, target_user_id:
 # ======================== TEAM INVITATIONS ========================
 
 def invite_to_team(db, team_id: str, inviter_id: str, invitee_id: str) -> Dict:
-    """Send team invitation"""
+    """Send team invitation (requires invite permission)"""
     invitee_id = invitee_id.strip()  # ✅ FIX: Sanitize input
     team = db.teams.find_one({"id": team_id})
     if not team:
         return {"success": False, "message": "Team not found"}
     
-    # Allow creator OR members with canShareTasks permission
-    if team["creatorId"] != inviter_id:
-        member = db.team_members.find_one({"teamId": team_id, "userId": inviter_id})
-        if not member or not member.get("canShareTasks", False):
-            return {"success": False, "message": "You don't have permission to invite members"}
+    # RBAC: Check invite permission via PermissionManager
+    if not PermissionManager.can_perform(db, team_id, inviter_id, "invite"):
+        return {"success": False, "message": "You don't have permission to invite members"}
     
     # ✅ SECURITY: Daily invitation limit (10/day) to prevent spam
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -456,16 +598,14 @@ def reject_invitation(db, invitation_id: str, user_id: str) -> Dict:
 # ======================== TEAM TASK SHARING ========================
 
 async def share_task_to_team(db, team_id: str, sender_id: str, task_data: Dict) -> Dict:
-    """Share a task to all team members (creator only)"""
+    """Share a task to all team members (requires share_tasks permission)"""
     team = db.teams.find_one({"id": team_id})
     if not team:
         return {"success": False, "message": "Team not found"}
     
-    # Allow creator OR members with canShareTasks permission
-    if team["creatorId"] != sender_id:
-        member = db.team_members.find_one({"teamId": team_id, "userId": sender_id})
-        if not member or not member.get("canShareTasks", False):
-            return {"success": False, "message": "You don't have permission to share tasks"}
+    # RBAC: Check share_tasks permission via PermissionManager
+    if not PermissionManager.can_perform(db, team_id, sender_id, "share_tasks"):
+        return {"success": False, "message": "You don't have permission to share tasks"}
     
     # Get sender name
     sender_profile = db.user_profiles.find_one({"userId": sender_id})
@@ -678,6 +818,177 @@ def get_team_leaderboard(db, team_id: str) -> List[Dict]:
     return leaderboard
 
 
+# ======================== TEAM SETTINGS & ROLE MANAGEMENT ========================
+
+def get_team_settings_data(db, team_id: str, user_id: str) -> Dict:
+    """Get team settings (any member can view)"""
+    member = db.team_members.find_one({"teamId": team_id, "userId": user_id})
+    if not member:
+        return {"success": False, "message": "You are not a member of this team"}
+    
+    settings = PermissionManager.get_team_settings(db, team_id)
+    settings["teamId"] = team_id
+    return {"success": True, "settings": settings}
+
+
+def update_team_settings(db, team_id: str, user_id: str, settings_data: Dict) -> Dict:
+    """
+    Update team permission policies (requires change_settings permission).
+    settings_data: partial dict of {whoCanInvite, whoCanShareTasks, ...} → role strings
+    """
+    if not PermissionManager.can_perform(db, team_id, user_id, "change_settings"):
+        return {"success": False, "message": "You don't have permission to change settings"}
+    
+    # Validate all values are valid roles
+    valid_setting_keys = set(DEFAULT_TEAM_SETTINGS.keys())
+    update_fields = {}
+    
+    for key, value in settings_data.items():
+        if key not in valid_setting_keys:
+            continue  # Ignore unknown keys
+        if value not in VALID_ROLES:
+            return {"success": False, "message": f"Invalid role '{value}' for {key}"}
+        update_fields[key] = value
+    
+    if not update_fields:
+        return {"success": False, "message": "No valid settings to update"}
+    
+    update_fields["updatedAt"] = datetime.utcnow()
+    
+    db.team_settings.update_one(
+        {"teamId": team_id},
+        {"$set": update_fields},
+        upsert=True
+    )
+    
+    # Return updated settings
+    new_settings = PermissionManager.get_team_settings(db, team_id)
+    return {"success": True, "message": "Settings updated", "settings": new_settings}
+
+
+def update_team_info(db, team_id: str, user_id: str, name: str = None, description: str = None, icon: str = None) -> Dict:
+    """Update team name, description, icon (requires change_settings permission)"""
+    if not PermissionManager.can_perform(db, team_id, user_id, "change_settings"):
+        return {"success": False, "message": "You don't have permission to change team info"}
+    
+    team = db.teams.find_one({"id": team_id})
+    if not team:
+        return {"success": False, "message": "Team not found"}
+    
+    update_fields = {"updatedAt": datetime.utcnow()}
+    
+    if name is not None:
+        name = name.strip()
+        if len(name) < 2:
+            return {"success": False, "message": "Team name must be at least 2 characters"}
+        if len(name) > 50:
+            return {"success": False, "message": "Team name cannot exceed 50 characters"}
+        update_fields["name"] = name
+    
+    if description is not None:
+        if len(description) > 200:
+            return {"success": False, "message": "Description cannot exceed 200 characters"}
+        update_fields["description"] = description.strip()
+    
+    if icon is not None:
+        update_fields["icon"] = icon
+    
+    db.teams.update_one({"id": team_id}, {"$set": update_fields})
+    
+    return {"success": True, "message": "Team info updated"}
+
+
+def update_member_role(db, team_id: str, actor_id: str, target_user_id: str, new_role: str) -> Dict:
+    """
+    Change a member's role (requires admin+ and must be higher than target).
+    Cannot promote to 'creator' — use transfer_ownership for that.
+    """
+    if new_role not in VALID_ROLES:
+        return {"success": False, "message": f"Invalid role: {new_role}"}
+    
+    if new_role == "creator":
+        return {"success": False, "message": "Cannot promote to creator. Use transfer ownership instead."}
+    
+    # Verify actor is a member
+    actor_role = PermissionManager.get_member_role(db, team_id, actor_id)
+    if not actor_role:
+        return {"success": False, "message": "You are not a member of this team"}
+    
+    # Only admin+ can change roles
+    if not PermissionManager.has_minimum_role(actor_role, "admin"):
+        return {"success": False, "message": "Only admins and above can change roles"}
+    
+    if actor_id == target_user_id:
+        return {"success": False, "message": "Cannot change your own role"}
+    
+    # Verify target is a member
+    target_member = db.team_members.find_one({"teamId": team_id, "userId": target_user_id})
+    if not target_member:
+        return {"success": False, "message": "User is not a member of this team"}
+    
+    target_current_role = target_member.get("role", "member")
+    
+    # Cannot modify someone of equal or higher role
+    if PermissionManager.get_role_level(target_current_role) >= PermissionManager.get_role_level(actor_role):
+        return {"success": False, "message": "Cannot change the role of someone with equal or higher rank"}
+    
+    # Cannot promote someone to your own level or above (non-creator)
+    if actor_role != "creator" and PermissionManager.get_role_level(new_role) >= PermissionManager.get_role_level(actor_role):
+        return {"success": False, "message": "Cannot promote someone to your own rank or above"}
+    
+    db.team_members.update_one(
+        {"teamId": team_id, "userId": target_user_id},
+        {"$set": {"role": new_role, "updatedAt": datetime.utcnow()}}
+    )
+    
+    return {"success": True, "message": f"Role updated to {new_role}"}
+
+
+def transfer_ownership(db, team_id: str, creator_id: str, new_owner_id: str) -> Dict:
+    """
+    Transfer team ownership from current creator to another member.
+    Old creator is demoted to admin. New owner becomes creator.
+    """
+    # Verify caller is the creator
+    actor_role = PermissionManager.get_member_role(db, team_id, creator_id)
+    if actor_role != "creator":
+        return {"success": False, "message": "Only the team creator can transfer ownership"}
+    
+    if creator_id == new_owner_id:
+        return {"success": False, "message": "You are already the owner"}
+    
+    # Verify target is a member
+    target_member = db.team_members.find_one({"teamId": team_id, "userId": new_owner_id})
+    if not target_member:
+        return {"success": False, "message": "User is not a member of this team"}
+    
+    # Atomic swap: demote old creator to admin, promote new owner to creator
+    db.team_members.update_one(
+        {"teamId": team_id, "userId": creator_id},
+        {"$set": {"role": "admin", "updatedAt": datetime.utcnow()}}
+    )
+    
+    db.team_members.update_one(
+        {"teamId": team_id, "userId": new_owner_id},
+        {"$set": {"role": "creator", "updatedAt": datetime.utcnow()}}
+    )
+    
+    # Update team's creatorId field
+    new_owner_profile = db.user_profiles.find_one({"userId": new_owner_id})
+    new_owner_name = new_owner_profile.get("displayName", "GreenHabit User") if new_owner_profile else "GreenHabit User"
+    
+    db.teams.update_one(
+        {"id": team_id},
+        {"$set": {
+            "creatorId": new_owner_id,
+            "creatorName": new_owner_name,
+            "updatedAt": datetime.utcnow()
+        }}
+    )
+    
+    return {"success": True, "message": f"Ownership transferred to {new_owner_name}"}
+
+
 # ======================== HELPERS ========================
 
 def sanitize_team_doc(doc: Dict) -> Dict:
@@ -705,6 +1016,9 @@ def ensure_team_indexes(db):
         db.team_members.create_index([("teamId", 1)])
         db.team_members.create_index([("userId", 1)], unique=True)  # One team per user
         db.team_members.create_index([("teamId", 1), ("userId", 1)])
+        
+        # Team settings collection
+        db.team_settings.create_index([("teamId", 1)], unique=True)
         
         # Team invitations collection
         db.team_invitations.create_index([("id", 1)], unique=True)
@@ -739,9 +1053,10 @@ def handle_user_deletion_teams(db, user_id: str) -> Dict:
         # Delete teams created by this user
         for team in creator_teams:
             team_id = team.get("id") or str(team["_id"])
-            # This will also remove all members
+            # This will also remove all members and settings
             db.teams.delete_one({"_id": team["_id"]})
             db.team_members.delete_many({"teamId": team_id})
+            db.team_settings.delete_many({"teamId": team_id})
             print(f"   - Disbanded team: {team.get('name', 'Unknown')}")
         
         # Remove user from teams where they are a member (not creator)
