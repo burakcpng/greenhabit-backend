@@ -123,6 +123,7 @@ class CreateTaskPayload(BaseModel):
     date: Optional[str] = None
     evidenceImagePath: Optional[str] = None  # ✅ FIX: Photo proof persistence
     creatorType: Optional[str] = "user"  # ✅ Creator Attribution: "system" or "user"
+    sharedBy: Optional[str] = None  # ✅ Original creator userId (for profile-added tasks)
 
 
 class UpdateTaskPayload(BaseModel):
@@ -402,6 +403,7 @@ def create_task(
             "estimatedImpact": payload.estimatedImpact,
             "evidenceImagePath": payload.evidenceImagePath,  # ✅ FIX: Save photo proof path
             "creatorType": payload.creatorType or "user",  # ✅ Creator Attribution
+            "sharedBy": payload.sharedBy,  # ✅ Original creator for profile-added tasks
             "isCompleted": False,
             "completedAt": None,
             "createdAt": datetime.utcnow(),
