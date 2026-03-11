@@ -423,6 +423,7 @@ def get_social_profile(db, user_id: str, viewer_id: Optional[str] = None) -> Dic
         "displayName": profile.get("displayName"),
         "bio": profile.get("bio"),
         "country": country,
+        "interests": prefs.get("interests", []) if prefs else [],
         "level": level,
         "totalPoints": eco_score,
         "tasksCompleted": total_tasks,
