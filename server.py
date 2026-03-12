@@ -10,7 +10,7 @@ from pymongo import MongoClient, DESCENDING
 from bson import ObjectId
 
 # Import external data files
-from task_templates import TASK_POOL
+from task_templates import TASK_POOL, parse_co2_impact
 
 from learning_content import LEARNING_ARTICLES
 from utils.text_safety import ProfanityFilter # ✅ Apple Guideline 1.2 Compliance
@@ -118,8 +118,9 @@ class CreateTaskPayload(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     details: str = Field(..., max_length=1000)
     category: str
-    points: int = Field(..., ge=0, le=1000)
     estimatedImpact: str = Field(..., max_length=200)
+    # ✅ ULTRATHINK FIX: Strictly bound custom metrics
+    co2Kg: Optional[float] = Field(None, ge=0.0, le=10.0)
     date: Optional[str] = None
     evidenceImagePath: Optional[str] = None  # ✅ FIX: Photo proof persistence
     creatorType: Optional[str] = "user"  # ✅ Creator Attribution: "system" or "user"
@@ -130,9 +131,7 @@ class UpdateTaskPayload(BaseModel):
     isCompleted: Optional[bool] = None
     title: Optional[str] = Field(None, min_length=1, max_length=200)
     details: Optional[str] = Field(None, max_length=1000)
-    category: Optional[str] = None
-    points: Optional[int] = Field(None, ge=0, le=1000)
-    estimatedImpact: Optional[str] = None
+    # ✅ ULTRATHINK FIX: Removed category, points, co2Kg, and estimatedImpact to make them immutable
     evidenceImagePath: Optional[str] = None  # ✅ FIX: Photo proof persistence
     completionLocalDate: Optional[str] = None  # ✅ Streak v2: "YYYY-MM-DD" in user's local TZ
     timezoneIdentifier: Optional[str] = None   # ✅ Streak v2: IANA TZ (e.g. "Europe/Istanbul")
@@ -392,6 +391,10 @@ def create_task(
         
         task_id = str(uuid.uuid4())
         
+        server_co2 = payload.co2Kg if payload.co2Kg is not None else parse_co2_impact(payload.estimatedImpact)
+        import math
+        server_points = min(100, int(math.ceil(server_co2 * 10)))
+        
         task_dict = {
             "id": task_id,
             "userId": user_id,
@@ -399,8 +402,9 @@ def create_task(
             "details": payload.details,
             "category": payload.category,
             "date": task_date,
-            "points": payload.points,
+            "points": server_points,
             "estimatedImpact": payload.estimatedImpact,
+            "co2Kg": server_co2,
             "evidenceImagePath": payload.evidenceImagePath,  # ✅ FIX: Save photo proof path
             "creatorType": payload.creatorType or "user",  # ✅ Creator Attribution
             "sharedBy": payload.sharedBy,  # ✅ Original creator for profile-added tasks
@@ -503,6 +507,10 @@ def update_task(
                     {"_id": task["_id"], "userId": user_id},
                     {"$set": update_data}
                 )
+            # ✅ ULTRATHINK FIX: Atomic score re-calculation when a task is un-completed
+            if is_toggling_completion and update_data.get("isCompleted") is False:
+                from rewards_system import sync_user_points
+                sync_user_points(db, user_id)
         
         # Build response
         response = {
@@ -529,6 +537,17 @@ def update_task(
             
             # Calculate rewards with the streak value
             rewards = calculate_rewards(db, user_id, task, streak_info.get("currentStreak", 0))
+            
+            # ✅ ULTRATHINK FIX: Persist calculated bonuses to the task permanently
+            db.tasks.update_one(
+                {"_id": result.upserted_id} if result.upserted_id else (
+                    {"id": task_id, "userId": user_id} if "id" in task else {"_id": getattr(task, "_id", task.get("_id")), "userId": user_id}
+                ),
+                {"$set": {
+                    "earnedPoints": rewards.get("earnedPoints", task.get("points", 10)),
+                    "bonuses": rewards.get("bonuses", {})
+                }}
+            )
             
             # Check for new achievements
             new_achievements = check_new_achievements(db, user_id, streak_info.get("currentStreak", 0))
@@ -603,6 +622,10 @@ def bulk_delete_tasks_endpoint(
         
         result = bulk_delete_tasks(db, user_id, payload.taskIds)
         
+        # ✅ ULTRATHINK FIX: Atomic score re-calculation when tasks are bulk deleted
+        from rewards_system import sync_user_points
+        sync_user_points(db, user_id)
+        
         # ✅ ULTRATHINK: Never return 404 for bulk operations
         # Always return 200 with success/failure info in response body
         return result
@@ -633,6 +656,10 @@ def delete_task(
         
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Task not found")
+            
+        # ✅ ULTRATHINK FIX: Atomic score re-calculation when task is individually deleted
+        from rewards_system import sync_user_points
+        sync_user_points(db, user_id)
         
         return {
             "success": True,
@@ -646,17 +673,23 @@ def delete_task(
 # ======================== STATS ROUTES ========================
 
 @api.get("/stats/weekly")
-def weekly_stats(user_id: str = Depends(get_current_user)):
+def weekly_stats(tz_id: str = Query("UTC"), user_id: str = Depends(get_current_user)):
     try:
         db = get_db()
         # user_id provided by Depends
         
-        today = date.today()
+        from streak_system import user_today
+        try:
+            today = user_today(tz_id)
+        except:
+            today = date.today()
+            
         week_start = today - timedelta(days=today.weekday())
         
         daily_stats = []
         total_completed = 0
         total_points = 0
+        total_co2 = 0.0
         
         days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
         
@@ -682,12 +715,13 @@ def weekly_stats(user_id: str = Depends(get_current_user)):
             
             total_completed += completed
             total_points += points
+            total_co2 += sum(t.get("co2Kg", 0.3) for t in tasks)
         
         return {
             "days": daily_stats,
             "totalCompleted": total_completed,
             "totalPoints": total_points,
-            "co2Saved": round(total_completed * 0.3, 2)
+            "co2Saved": round(total_co2, 2)
         }
     except HTTPException:
         raise
@@ -695,12 +729,17 @@ def weekly_stats(user_id: str = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=f"Failed to fetch stats: {str(e)}")
 
 @api.get("/stats/monthly")
-def monthly_stats(user_id: str = Depends(get_current_user)):
+def monthly_stats(tz_id: str = Query("UTC"), user_id: str = Depends(get_current_user)):
     try:
         db = get_db()
         # user_id provided by Depends
         
-        today = date.today()
+        from streak_system import user_today
+        try:
+            today = user_today(tz_id)
+        except:
+            today = date.today()
+            
         month_start = today.replace(day=1)
         
         weeks_data = []
@@ -730,6 +769,7 @@ def monthly_stats(user_id: str = Depends(get_current_user)):
             
             total_completed += completed
             total_points += points
+            total_co2 += sum(t.get("co2Kg", 0.3) for t in tasks)
             
             current_date = week_end + timedelta(days=1)
             week_num += 1
@@ -738,7 +778,7 @@ def monthly_stats(user_id: str = Depends(get_current_user)):
             "weeks": weeks_data,
             "totalCompleted": total_completed,
             "totalPoints": total_points,
-            "co2Saved": round(total_completed * 0.3, 2)
+            "co2Saved": round(total_co2, 2)
         }
     except HTTPException:
         raise
@@ -853,7 +893,8 @@ async def generate_ai_tasks():
             "category": category,
             "date": today,
             "points": task_template["points"],
-            "estimatedImpact": task_template["estimatedImpact"]
+            "estimatedImpact": task_template["estimatedImpact"],
+            "co2Kg": task_template.get("co2Kg", parse_co2_impact(task_template["estimatedImpact"]))
         }
         
         generated_tasks.append(task)
@@ -2491,7 +2532,7 @@ def export_tasks_endpoint(
         
         # Calculate summary
         total_points = sum(t.get("points", 0) for t in tasks)
-        co2_saved = round(len(tasks) * 0.3, 2)
+        co2_saved = round(sum(t.get("co2Kg", 0.3) for t in tasks), 2)
         
         return {
             "tasks": tasks,

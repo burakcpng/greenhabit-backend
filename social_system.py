@@ -16,30 +16,23 @@ from rate_limiter import check_user_rate, RateLimitExceeded
 def calculate_eco_score(db, user_id: str) -> int:
     """
     Calculate user's eco score based on:
-    - Total points from completed tasks
+    - Total points from completed tasks (already aggregated)
     - Achievement points
-    - Streak bonuses
     """
-    # Get total points from completed tasks
-    pipeline = [
-        {"$match": {"userId": user_id, "isCompleted": True}},
-        {"$group": {"_id": None, "totalPoints": {"$sum": "$points"}}}
-    ]
-    
-    result = list(db.tasks.aggregate(pipeline))
-    task_points = result[0]["totalPoints"] if result else 0
-    
-    # Get achievement points from profile
+    # Simply read the pre-aggregated totalPoints from profile
     profile = db.user_profiles.find_one({"userId": user_id})
-    achievement_points = profile.get("totalPoints", 0) if profile else 0
-    
-    return task_points + achievement_points
+    return profile.get("totalPoints", 0) if profile else 0
 
 
 def calculate_total_co2_saved(db, user_id: str) -> float:
-    """Calculate total CO2 saved (0.3kg per completed task)"""
-    count = db.tasks.count_documents({"userId": user_id, "isCompleted": True})
-    return round(count * 0.3, 2)
+    """Calculate total CO2 saved"""
+    pipeline = [
+        {"$match": {"userId": user_id, "isCompleted": True}},
+        {"$group": {"_id": None, "totalCo2": {"$sum": {"$ifNull": ["$co2Kg", 0.3]}}}}
+    ]
+    result = list(db.tasks.aggregate(pipeline))
+    co2_saved = result[0]["totalCo2"] if result else 0.0
+    return round(co2_saved, 2)
 
 
 # ======================== USER MANUAL TASKS (Profile Display) ========================
@@ -545,9 +538,8 @@ def get_global_ranking(db, limit: int = 50, viewer_id: Optional[str] = None) -> 
         if not privacy.get("appearInLeaderboard", True):
             continue
         
-        task_stat = task_stats.get(user_id, {"taskPoints": 0, "tasksCompleted": 0})
-        achievement_points = profile.get("totalPoints", 0)
-        eco_score = task_stat["taskPoints"] + achievement_points
+        # Use profile totalPoints directly since it's already aggregated
+        eco_score = profile.get("totalPoints", 0)
         
         from rewards_system import calculate_streak
         streak_info = calculate_streak(db, user_id)

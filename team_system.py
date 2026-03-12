@@ -775,8 +775,13 @@ def get_team_stats(db, team_id: str) -> Dict:
         total_points += profile.get("totalPoints", 0)
         tasks_completed += profile.get("tasksCompleted", 0)
     
-    # Calculate CO2 saved (0.3 kg per task)
-    co2_saved = round(tasks_completed * 0.3, 2)
+    # Calculate CO2 saved with real task impact
+    pipeline = [
+        {"$match": {"userId": {"$in": user_ids}, "isCompleted": True}},
+        {"$group": {"_id": None, "totalCo2": {"$sum": {"$ifNull": ["$co2Kg", 0.3]}}}}
+    ]
+    result = list(db.tasks.aggregate(pipeline))
+    co2_saved = round(result[0]["totalCo2"], 2) if result else 0.0
     
     return {
         "teamId": team_id,

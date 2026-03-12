@@ -213,7 +213,7 @@ def calculate_streak(db, user_id: str) -> Dict:
 
 # ======================== REWARDS CALCULATION ========================
 
-def calculate_rewards(db, user_id: str, task: dict, current_streak: int = 0) -> Dict:
+def calculate_rewards(db, user_id: str, task: dict, current_streak: int = 0, tz_id: str = "UTC") -> Dict:
     """
     Calculate rewards for completing a task
     Returns points breakdown and bonuses
@@ -241,7 +241,11 @@ def calculate_rewards(db, user_id: str, task: dict, current_streak: int = 0) -> 
     category_bonus = 5 if category_tasks_today == 1 else 0
     
     # Time bonus: Early bird (before 9 AM)
-    current_hour = datetime.utcnow().hour
+    import zoneinfo
+    try:
+        current_hour = datetime.utcnow().replace(tzinfo=zoneinfo.ZoneInfo("UTC")).astimezone(zoneinfo.ZoneInfo(tz_id)).hour
+    except Exception:
+        current_hour = datetime.utcnow().hour
     time_bonus = 5 if current_hour < 9 else 0
     
     total_points = base_points + streak_bonus + category_bonus + time_bonus
@@ -251,13 +255,52 @@ def calculate_rewards(db, user_id: str, task: dict, current_streak: int = 0) -> 
         "streakBonus": streak_bonus,
         "categoryBonus": category_bonus,
         "timeBonus": time_bonus,
+        "bonuses": {
+            "streak": streak_bonus,
+            "category": category_bonus,
+            "time": time_bonus
+        },
+        "earnedPoints": total_points,
         "totalPoints": total_points,
         "multiplier": round(total_points / base_points, 2) if base_points > 0 else 1.0
     }
 
+# ======================== POINTS CACHE SYNC =========================
+
+def sync_user_points(db, user_id: str):
+    """
+    Atomically force sync user's total points based on their actual earnedPoints.
+    Prevents cache desync exploits when tasks are deleted or un-completed.
+    """
+    pipeline = [
+        {"$match": {"userId": user_id, "isCompleted": True}},
+        {"$group": {"_id": None, "totalTaskPoints": {"$sum": {"$ifNull": ["$earnedPoints", "$points"]}}}}
+    ]
+    result = list(db.tasks.aggregate(pipeline))
+    total_task_points = result[0]["totalTaskPoints"] if result else 0
+    
+    # Needs to also sum achievement points
+    profile = db.user_profiles.find_one({"userId": user_id})
+    achievement_points = 0
+    if profile:
+        from rewards_system import ACHIEVEMENTS
+        unlocked = profile.get("unlockedAchievements", [])
+        for ach_id in unlocked:
+            ach = ACHIEVEMENTS.get(ach_id)
+            if ach:
+                achievement_points += ach.get("points", 0)
+                
+    total_points = total_task_points + achievement_points
+    
+    db.user_profiles.update_one(
+        {"userId": user_id},
+        {"$set": {"totalPoints": total_points, "updatedAt": datetime.utcnow()}}
+    )
+    return total_points
+
 # ======================== ACHIEVEMENT CHECK ========================
 
-def check_new_achievements(db, user_id: str, current_streak: int = 0) -> List[Dict]:
+def check_new_achievements(db, user_id: str, current_streak: int = 0, tz_id: str = "UTC") -> List[Dict]:
     """
     Check if user unlocked any new achievements
     Returns list of newly unlocked achievements
@@ -295,7 +338,7 @@ def check_new_achievements(db, user_id: str, current_streak: int = 0) -> List[Di
     task_points = 0
     for t in user_tasks:
         try:
-            task_points += int(t.get("points", 0))
+            task_points += int(t.get("earnedPoints", t.get("points", 0)))
         except (ValueError, TypeError):
             pass
     
@@ -318,18 +361,32 @@ def check_new_achievements(db, user_id: str, current_streak: int = 0) -> List[Di
     # but for now assuming "Perfect Day" means completed at least 3 tasks and none pending is complicated without extra query.
     # Simplified: If user completed 3+ tasks today, award it.
     
-    # ✅ ULTRATHINK FIX: Helper to safely extract hour from completedAt
+    # ✅ ULTRATHINK FIX: Helper to safely extract local hour using user timezone
     def _get_hour(completed_at) -> int:
-        """Safely extract hour from completedAt (datetime or string)"""
+        """Safely extract local hour using tz_id"""
         if completed_at is None:
-            return 12  # Default to noon (no bonus)
-        if isinstance(completed_at, datetime):
-            return completed_at.hour
-        # It's a string
-        try:
-            return datetime.fromisoformat(str(completed_at).replace("Z", "")).hour
-        except:
             return 12
+        import zoneinfo
+        try:
+            if isinstance(completed_at, str):
+                dt = datetime.fromisoformat(str(completed_at).replace("Z", ""))
+            else:
+                dt = completed_at
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=zoneinfo.ZoneInfo("UTC"))
+            return dt.astimezone(zoneinfo.ZoneInfo(tz_id)).hour
+        except Exception:
+            return 12
+
+    from streak_system import user_today
+    try:
+        today_date = user_today(tz_id)
+    except Exception:
+        today_date = date.today()
+    week_start_date = today_date - timedelta(days=today_date.weekday())
+    current_week_dates = set((week_start_date + timedelta(days=i)).isoformat() for i in range(7))
+    user_task_dates = set(t.get("date") for t in user_tasks)
+    is_week_warrior = current_week_dates.issubset(user_task_dates)
             
     # Helper for days of week
     def _get_weekday(date_str) -> int:
@@ -360,7 +417,7 @@ def check_new_achievements(db, user_id: str, current_streak: int = 0) -> List[Di
         "streak_3": current_streak >= 3,
         "streak_7": current_streak >= 7,
         "streak_30": current_streak >= 30,
-        "week_warrior": current_streak >= 7,
+        "week_warrior": is_week_warrior,
         "early_bird": any(_get_hour(t.get("completedAt")) < 9 for t in user_tasks if t.get("completedAt")),
         "social_butterfly": invites_sent >= 5,
         "team_player": is_in_team,
