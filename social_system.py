@@ -546,11 +546,14 @@ def get_global_ranking(db, limit: int = 50, viewer_id: Optional[str] = None) -> 
         
         level = max(1, eco_score // 100 + 1)
         
+        user_task_info = task_stats.get(user_id, {})
+        tasks_completed = user_task_info.get("tasksCompleted", 0)
+        
         rankings.append({
             "userId": user_id,
             "displayName": profile.get("displayName"),
             "points": eco_score,
-            "tasksCompleted": task_stat["tasksCompleted"],
+            "tasksCompleted": tasks_completed,
             "streak": streak_info["currentStreak"],
             "level": level
         })
