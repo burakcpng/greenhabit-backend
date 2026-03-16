@@ -44,15 +44,23 @@ def validate_apns_config():
         print(f"✅ APNs configured: host={APNS_HOST}, team={TEAM_ID}, key={KEY_ID}")
 
 
-def register_device_token(db, user_id: str, token: str, platform: str = "ios") -> Dict:
+def register_device_token(db, user_id: str, token: str, platform: str = "ios", environment: str = "production") -> Dict:
     """Store or update user's device token"""
     try:
+        # Step 1: Remove this token from any other user (atomic ownership claim)
+        db.device_tokens.delete_many({
+            "token": token,
+            "userId": {"$ne": user_id}
+        })
+        
+        # Step 2: Upsert for the current user
         db.device_tokens.update_one(
             {"userId": user_id},
             {
                 "$set": {
                     "token": token,
                     "platform": platform,
+                    "environment": environment,
                     "updatedAt": datetime.utcnow()
                 }
             },
@@ -112,20 +120,28 @@ def _generate_jwt_token() -> str:
     return _cached_jwt
 
 
-async def _get_apns_client() -> httpx.AsyncClient:
+async def _get_apns_client(force_new: bool = False) -> httpx.AsyncClient:
     """Get or create a persistent HTTP/2 client for APNs."""
     global _apns_client
+    if force_new and _apns_client:
+        await _apns_client.aclose()
+        _apns_client = None
+        
     if _apns_client is None or _apns_client.is_closed:
-        _apns_client = httpx.AsyncClient(http2=True, timeout=10.0)
+        limits = httpx.Limits(max_keepalive_connections=20, keepalive_expiry=30.0)
+        _apns_client = httpx.AsyncClient(http2=True, limits=limits, timeout=10.0)
     return _apns_client
 
 
 async def send_push_notification(db, user_id: str, title: str, body: str, data: Dict = None):
     """Send push notification to a specific user with retry policy."""
-    token = get_user_token(db, user_id)
-    if not token:
+    token_record = db.device_tokens.find_one({"userId": user_id})
+    if not token_record:
         print(f"No token found for user {user_id}")
         return {"success": False, "message": "User has no registered device"}
+    
+    token = token_record["token"]
+    environment = token_record.get("environment", "production")
     
     # Build payload — protect aps from being overwritten
     payload = {
@@ -143,6 +159,16 @@ async def send_push_notification(db, user_id: str, title: str, body: str, data: 
         for key, value in data.items():
             if key != "aps":  # Never allow overwriting aps
                 payload[key] = value
+                
+    # Payload Size Enforcement (4KB)
+    payload_bytes = json.dumps(payload).encode('utf-8')
+    if len(payload_bytes) > 4096:
+        # Safely truncate respecting UTF-8 multi-byte boundaries
+        excess = len(payload_bytes) - 4000  # 96-byte safety margin
+        current_body = payload["aps"]["alert"]["body"]
+        encoded_body = current_body.encode('utf-8')
+        truncated = encoded_body[:max(0, len(encoded_body) - excess)].decode('utf-8', errors='ignore')
+        payload["aps"]["alert"]["body"] = truncated + "..."
     
     # Generate JWT (cached)
     try:
@@ -160,71 +186,68 @@ async def send_push_notification(db, user_id: str, title: str, body: str, data: 
         "apns-expiration": str(int(time.time()) + 86400),  # 24-hour TTL
     }
     
-    # Production and Sandbox Hosts
-    hosts_to_try = [APNS_HOST]
+    # Explicit Environment Routing
+    apns_host = "https://api.sandbox.push.apple.com" if environment == "sandbox" else "https://api.push.apple.com"
+    url = f"{apns_host}/3/device/{token}"
     
-    # Retry policy per environment: 3 attempts with exponential backoff
+    # Retry policy: 3 attempts with exponential backoff
     max_retries = 3
     
-    for current_host in hosts_to_try:
-        url = f"{current_host}/3/device/{token}"
-        
-        for attempt in range(max_retries):
-            try:
-                client = await _get_apns_client()
-                response = await client.post(url, json=payload, headers=headers)
-                
-                if response.status_code == 200:
-                    print(f"✅ Push sent to {user_id} via {current_host}")
-                    return {"success": True, "apns_id": response.headers.get("apns-id")}
-                
-                # Handle specific error codes
-                if response.status_code == 410:
-                    # Token expired — remove from DB
-                    db.device_tokens.delete_one({"token": token})
-                    print(f"🗑️ Expired token removed for {user_id}")
-                    return {"success": False, "error": "DeviceTokenExpired"}
-                
-                if response.status_code == 400:
-                    error_body = response.text
-                    # Check if token is for wrong environment
-                    if "BadDeviceToken" in error_body and current_host == 'https://api.push.apple.com':
-                        if len(hosts_to_try) == 1:
-                            print(f"⚠️ APNs token rejected by Prod, trying Sandbox for {user_id}...")
-                            hosts_to_try.append('https://api.sandbox.push.apple.com')
-                        break # Break inner retry loop, continue to outer host loop
-                    
-                    # Other bad requests — don't retry
-                    print(f"❌ Push failed (400 - BadRequest): {error_body}")
-                    return {"success": False, "error": error_body}
-                
-                if response.status_code == 403:
-                    # Auth issue — JWT invalid, don't retry (will fail again)
-                    # Invalidate JWT cache so next call regenerates
-                    global _cached_jwt, _cached_jwt_time
-                    _cached_jwt = None
-                    _cached_jwt_time = 0
-                    error_body = response.text
-                    print(f"❌ Push failed (403 - Forbidden): {error_body}")
-                    return {"success": False, "error": error_body}
-                
-                if response.status_code in (429, 500, 503):
-                    # Retryable errors
-                    print(f"⚠️ Push attempt {attempt + 1}/{max_retries} failed ({response.status_code}) via {current_host}")
-                    if attempt < max_retries - 1:
-                        await asyncio.sleep(2 ** attempt)  # 1s, 2s, 4s
-                        continue
-                    break # Exhausted retries for this host
-                
-                # Other unexpected status
-                print(f"❌ Push failed ({response.status_code}): {response.text}")
-                return {"success": False, "error": response.text}
-                
-            except Exception as e:
-                print(f"⚠️ Push delivery error (attempt {attempt + 1}/{max_retries}) via {current_host}: {e}")
+    for attempt in range(max_retries):
+        try:
+            client = await _get_apns_client()
+            response = await client.post(url, json=payload, headers=headers)
+            
+            if response.status_code == 200:
+                print(f"✅ Push sent to {user_id} via {apns_host}")
+                return {"success": True, "apns_id": response.headers.get("apns-id")}
+            
+            # Handle specific error codes
+            if response.status_code == 410:
+                # Token expired — remove from DB
+                db.device_tokens.delete_one({"token": token})
+                print(f"🗑️ Expired token removed for {user_id}")
+                return {"success": False, "error": "DeviceTokenExpired"}
+            
+            if response.status_code == 400:
+                error_body = response.text
+                print(f"❌ Push failed (400 - BadRequest): {error_body}")
+                return {"success": False, "error": error_body}
+            
+            if response.status_code == 403:
+                # Auth issue — JWT invalid, don't retry (will fail again)
+                # Invalidate JWT cache so next call regenerates
+                global _cached_jwt, _cached_jwt_time
+                _cached_jwt = None
+                _cached_jwt_time = 0
+                error_body = response.text
+                print(f"❌ Push failed (403 - Forbidden): {error_body}")
+                return {"success": False, "error": error_body}
+            
+            if response.status_code in (429, 500, 503):
+                # Retryable errors
+                print(f"⚠️ Push attempt {attempt + 1}/{max_retries} failed ({response.status_code}) via {apns_host}")
                 if attempt < max_retries - 1:
-                    await asyncio.sleep(2 ** attempt)
+                    await asyncio.sleep(2 ** attempt)  # 1s, 2s, 4s
                     continue
-                break # Exhausted retries for this host
-    
-    return {"success": False, "error": "Exhausted all retries for all environments"}
+                break # Exhausted retries
+            
+            # Other unexpected status
+            print(f"❌ Push failed ({response.status_code}): {response.text}")
+            return {"success": False, "error": response.text}
+            
+        except (httpx.TransportError, httpx.ReadError) as e:
+            print(f"⚠️ Transport error on attempt {attempt + 1}: {e}")
+            await _get_apns_client(force_new=True)  # Destroy dead socket
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)
+                continue
+            break
+        except Exception as e:
+            print(f"⚠️ Push delivery error (attempt {attempt + 1}/{max_retries}) via {apns_host}: {e}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)
+                continue
+            break
+            
+    return {"success": False, "error": "Exhausted all retries for APNs push"}
