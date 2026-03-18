@@ -1369,9 +1369,9 @@ def get_public_profile(
                 raise HTTPException(status_code=403, detail="Profile unavailable")
         
         # Check if profile is public
-        privacy = db.user_privacy.find_one({"userId": target_id}) or {"profilePublic": True}
+        privacy = db.user_privacy.find_one({"userId": target_id}) or {"profilePublic": False}
         
-        if not privacy.get("profilePublic", True) and viewer_id != target_id:
+        if not privacy.get("profilePublic", False) and viewer_id != target_id:
             # Check if viewer is following
             is_following = db.follows.count_documents({
                 "followerId": viewer_id,

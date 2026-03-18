@@ -400,16 +400,20 @@ def get_social_profile(db, user_id: str, viewer_id: Optional[str] = None) -> Dic
     
     # Check privacy settings
     privacy = db.user_privacy.find_one({"userId": user_id}) or {
-        "profilePublic": True,
+        "profilePublic": False,
         "showAchievements": True,
         "showStats": True,
+        "showInterests": True,
         "showFollowers": True,
         "appearInLeaderboard": True
     }
     
+    # Compute privacy flags
+    show_stats = privacy.get("showStats", True) or viewer_id == user_id
+    
     # Get weekly stats if permitted
     weekly_stats = None
-    if privacy.get("showStats", True) or viewer_id == user_id:
+    if show_stats:
         weekly_stats = get_user_weekly_stats(db, user_id)
     
     # Created Tasks — ALWAYS visible (not controlled by any privacy toggle)
@@ -422,12 +426,12 @@ def get_social_profile(db, user_id: str, viewer_id: Optional[str] = None) -> Dic
         "country": country,
         "interests": (prefs.get("interests", []) if prefs else []) if (privacy.get("showInterests", True) or viewer_id == user_id) else [],
         "level": level,
-        "totalPoints": eco_score,
-        "tasksCompleted": total_tasks,
-        "currentStreak": streak_info["currentStreak"],
-        "longestStreak": streak_info["longestStreak"],
+        "totalPoints": eco_score if show_stats else 0,
+        "tasksCompleted": total_tasks if show_stats else 0,
+        "currentStreak": streak_info["currentStreak"] if show_stats else 0,
+        "longestStreak": streak_info["longestStreak"] if show_stats else 0,
         "rank": None,  # Will be filled by ranking endpoint
-        "co2Saved": co2_saved,
+        "co2Saved": co2_saved if show_stats else 0.0,
         "achievements": achievements if (privacy.get("showAchievements", True) or viewer_id == user_id) else [],
         "weeklyStats": weekly_stats,
         "manualTasks": manual_tasks,  # User-created tasks for profile discovery
