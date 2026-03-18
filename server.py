@@ -1786,7 +1786,7 @@ class TaskSharePayload(BaseModel):
     estimatedImpact: Optional[str] = None
 
 @api.post("/shares")
-def create_share(
+async def create_share(
     payload: TaskSharePayload,
     user_id: str = Depends(get_current_user)
 ):
@@ -1808,7 +1808,7 @@ def create_share(
             "estimatedImpact": payload.estimatedImpact
         }
         
-        result = create_task_share(db, user_id, payload.recipientId, task_data)
+        result = await create_task_share(db, user_id, payload.recipientId, task_data)
         
         if not result["success"]:
             raise HTTPException(status_code=400, detail=result["message"])
@@ -2567,6 +2567,7 @@ def export_tasks_endpoint(
 class DeviceTokenPayload(BaseModel):
     token: str
     platform: str = "ios"
+    environment: str = "production"
 
 @api.post("/notifications/register-token")
 def register_token_endpoint(
@@ -2578,7 +2579,7 @@ def register_token_endpoint(
         db = get_db()
         from notification_system import register_device_token
         
-        return register_device_token(db, user_id, payload.token, payload.platform)
+        return register_device_token(db, user_id, payload.token, payload.platform, payload.environment)
     except HTTPException:
         raise
     except Exception as e:

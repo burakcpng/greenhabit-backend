@@ -6,13 +6,13 @@ from typing import Dict, List, Optional
 from bson import ObjectId
 
 
-def create_task_share(
+async def create_task_share(
     db,
     sender_id: str,
     recipient_id: str,
     task_data: Dict
 ) -> Dict:
-    """Create a task share request"""
+    """Create a task share request and send push notification to recipient"""
     
     # Prevent self-sending
     if sender_id == recipient_id:
@@ -50,6 +50,20 @@ def create_task_share(
     share_doc["id"] = str(result.inserted_id)
     if "_id" in share_doc:
         del share_doc["_id"]
+    
+    # ✅ PUSH NOTIFICATION: Notify recipient of the shared task
+    try:
+        from notification_system import send_push_notification
+        
+        task_title = task_data.get("title", "Eco Task")
+        await send_push_notification(
+            db,
+            recipient_id,
+            f"New Shared Task! 📋",
+            f"{sender_name} shared \"{task_title}\" with you."
+        )
+    except Exception as e:
+        print(f"⚠️ Failed to send task share push: {e}")
     
     return {
         "success": True,

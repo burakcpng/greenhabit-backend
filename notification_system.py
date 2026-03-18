@@ -12,7 +12,7 @@ from typing import Dict, List, Optional
 TEAM_ID = os.getenv("APNS_TEAM_ID", "")
 KEY_ID = os.getenv("APNS_KEY_ID", "")
 BUNDLE_ID = os.getenv("APNS_BUNDLE_ID", "com.burakcpng.GreenHabit")
-AUTH_KEY_PATH = os.getenv("APNS_AUTH_KEY_PATH", "AuthKey_XXXXXXXXXX.p8")
+AUTH_KEY_PATH = os.getenv("APNS_AUTH_KEY_PATH", "AuthKey_K7P6P48699.p8")
 
 # Production by default — entitlements are set to production
 APNS_HOST = os.getenv("APNS_HOST", "https://api.push.apple.com")
