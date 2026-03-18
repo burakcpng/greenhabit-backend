@@ -412,22 +412,15 @@ def get_social_profile(db, user_id: str, viewer_id: Optional[str] = None) -> Dic
     if privacy.get("showStats", True) or viewer_id == user_id:
         weekly_stats = get_user_weekly_stats(db, user_id)
     
-    # Get manual tasks for profile display (own profile + other users)
-    # Respects showStats privacy setting for other viewers
-    manual_tasks = []
-    if viewer_id == user_id:
-        # Own profile — always show own manual tasks
-        manual_tasks = get_user_manual_tasks(db, user_id, viewer_id=viewer_id, limit=10)
-    elif viewer_id and privacy.get("showStats", True):
-        # Other user viewing — respect privacy
-        manual_tasks = get_user_manual_tasks(db, user_id, viewer_id=viewer_id, limit=10)
+    # Created Tasks — ALWAYS visible (not controlled by any privacy toggle)
+    manual_tasks = get_user_manual_tasks(db, user_id, viewer_id=viewer_id, limit=10) if viewer_id else []
     
     return {
         "userId": user_id,
         "displayName": profile.get("displayName"),
         "bio": profile.get("bio"),
         "country": country,
-        "interests": prefs.get("interests", []) if prefs else [],
+        "interests": (prefs.get("interests", []) if prefs else []) if (privacy.get("showInterests", True) or viewer_id == user_id) else [],
         "level": level,
         "totalPoints": eco_score,
         "tasksCompleted": total_tasks,
@@ -866,9 +859,10 @@ def get_privacy_settings(db, user_id: str) -> Dict:
     if not settings:
         settings = {
             "userId": user_id,
-            "profilePublic": True,
+            "profilePublic": False,
             "showAchievements": True,
             "showStats": True,
+            "showInterests": True,
             "showFollowers": True,
             "appearInLeaderboard": True
         }
@@ -883,7 +877,7 @@ def get_privacy_settings(db, user_id: str) -> Dict:
 
 def update_privacy_settings(db, user_id: str, settings: Dict) -> Dict:
     """Update user's privacy settings"""
-    allowed_fields = ["profilePublic", "showAchievements", "showStats", "showFollowers", "appearInLeaderboard"]
+    allowed_fields = ["profilePublic", "showAchievements", "showStats", "showInterests", "showFollowers", "appearInLeaderboard"]
     update_data = {k: v for k, v in settings.items() if k in allowed_fields}
     update_data["updatedAt"] = datetime.utcnow()
     

@@ -1259,6 +1259,7 @@ class PrivacySettingsPayload(BaseModel):
     profilePublic: Optional[bool] = None
     showAchievements: Optional[bool] = None
     showStats: Optional[bool] = None
+    showInterests: Optional[bool] = None
     showFollowers: Optional[bool] = None
     appearInLeaderboard: Optional[bool] = None
 
@@ -1518,8 +1519,8 @@ def get_user_created_tasks_endpoint(
         
         # Privacy check — if not own profile, respect visibility
         if current_user != user_id:
-            privacy = db.user_privacy.find_one({"userId": user_id}) or {"profilePublic": True, "showStats": True}
-            if not privacy.get("profilePublic", True) or not privacy.get("showStats", True):
+            privacy = db.user_privacy.find_one({"userId": user_id}) or {"profilePublic": False}
+            if not privacy.get("profilePublic", False):
                 return {"tasks": [], "nextCursor": None}
         
         result = get_created_tasks(
