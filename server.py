@@ -1361,6 +1361,12 @@ def get_public_profile(
         if viewer_id != target_id and is_blocked(db, viewer_id, target_id):
             raise HTTPException(status_code=403, detail="Profile unavailable")
         
+        # 🚫 Ban guard — hide banned user profiles from other users
+        if viewer_id != target_id:
+            target_user = db.users.find_one({"userId": target_id}, {"isBanned": 1})
+            if target_user and target_user.get("isBanned", False):
+                raise HTTPException(status_code=403, detail="Profile unavailable")
+        
         # Check if profile is public
         privacy = db.user_privacy.find_one({"userId": target_id}) or {"profilePublic": True}
         
@@ -1406,6 +1412,11 @@ async def follow_user_endpoint(
         # ✅ Apple 1.2: Block guard — cannot follow blocked user
         if is_blocked(db, user_id, target_id):
             raise HTTPException(status_code=403, detail="Interaction not allowed due to block relationship")
+        
+        # 🚫 Ban guard — cannot follow banned user
+        target_user = db.users.find_one({"userId": target_id}, {"isBanned": 1})
+        if target_user and target_user.get("isBanned", False):
+            raise HTTPException(status_code=403, detail="Cannot follow this user")
         
         result = await follow_user(db, user_id, target_id)
         

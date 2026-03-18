@@ -285,11 +285,19 @@ def leave_team(db, team_id: str, user_id: str) -> Dict:
 # ======================== TEAM MEMBERS ========================
 
 def get_team_members(db, team_id: str) -> List[Dict]:
-    """Get all members of a team"""
+    """Get all members of a team (hides banned users)"""
     members_cursor = db.team_members.find({"teamId": team_id}).sort("joinedAt", 1)
+    
+    # Get banned user IDs to hide from member list
+    from social_system import get_banned_user_ids
+    banned_users = set(get_banned_user_ids(db))
     
     members = []
     for m in members_cursor:
+        # Skip banned users
+        if m["userId"] in banned_users:
+            continue
+        
         user_profile = db.user_profiles.find_one({"userId": m["userId"]})
         
         # Get user stats
@@ -794,11 +802,19 @@ def get_team_stats(db, team_id: str) -> Dict:
 
 
 def get_team_leaderboard(db, team_id: str) -> List[Dict]:
-    """Get leaderboard for team members"""
+    """Get leaderboard for team members (hides banned users)"""
     members = list(db.team_members.find({"teamId": team_id}))
+    
+    # Get banned user IDs to hide from leaderboard
+    from social_system import get_banned_user_ids
+    banned_users = set(get_banned_user_ids(db))
     
     leaderboard = []
     for m in members:
+        # Skip banned users
+        if m["userId"] in banned_users:
+            continue
+        
         user_profile = db.user_profiles.find_one({"userId": m["userId"]})
         
         from rewards_system import get_user_profile

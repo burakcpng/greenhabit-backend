@@ -318,6 +318,16 @@ def get_blocked_users(db, user_id: str) -> List[str]:
     return get_all_blocked_ids(db, user_id)
 
 
+def get_banned_user_ids(db) -> List[str]:
+    """
+    Get all currently banned user IDs.
+    Used to hide banned users from all social surfaces (ranking, search, followers, etc.).
+    Ban is set via Telegram bot moderation (isBanned: true on users collection).
+    """
+    banned_docs = db.users.find({"isBanned": True}, {"userId": 1})
+    return [doc["userId"] for doc in banned_docs if doc.get("userId")]
+
+
 # ======================== USER PROFILE EXTENSION ========================
 
 def get_social_profile(db, user_id: str, viewer_id: Optional[str] = None) -> Dict:
@@ -508,6 +518,10 @@ def get_global_ranking(db, limit: int = 50, viewer_id: Optional[str] = None) -> 
     # Get blocked users list for filtering
     blocked_users = get_blocked_users(db, viewer_id) if viewer_id else []
     
+    # Get banned users list for filtering
+    banned_users = get_banned_user_ids(db)
+    excluded_users = set(blocked_users + banned_users)
+    
     # Get all users with their eco scores
     pipeline = [
         {"$match": {"isCompleted": True}},
@@ -529,8 +543,8 @@ def get_global_ranking(db, limit: int = 50, viewer_id: Optional[str] = None) -> 
         if not user_id:
             continue
         
-        # Apple Guideline 1.2: Skip blocked users
-        if user_id in blocked_users:
+        # Apple Guideline 1.2: Skip blocked & banned users
+        if user_id in excluded_users:
             continue
         
         # Check if user wants to appear in leaderboard
@@ -747,13 +761,15 @@ def get_followers(db, user_id: str, page: int = 1, limit: int = 20, viewer_id: O
     """
     skip = (page - 1) * limit
     
-    # Get blocked users list for filtering
+    # Get blocked + banned users list for filtering
     blocked_users = get_blocked_users(db, viewer_id) if viewer_id else []
+    banned_users = get_banned_user_ids(db)
+    excluded_users = list(set(blocked_users + banned_users))
     
-    # Build query with blocked user filter
+    # Build query with blocked/banned user filter
     query = {"followedId": user_id}
-    if blocked_users:
-        query["followerId"] = {"$nin": blocked_users}
+    if excluded_users:
+        query["followerId"] = {"$nin": excluded_users}
     
     # Get follower relationships
     follows = list(db.follows.find(query).sort("createdAt", -1).skip(skip).limit(limit + 1))
@@ -797,13 +813,15 @@ def get_following(db, user_id: str, page: int = 1, limit: int = 20, viewer_id: O
     """
     skip = (page - 1) * limit
     
-    # Get blocked users list for filtering
+    # Get blocked + banned users list for filtering
     blocked_users = get_blocked_users(db, viewer_id) if viewer_id else []
+    banned_users = get_banned_user_ids(db)
+    excluded_users = list(set(blocked_users + banned_users))
     
-    # Build query with blocked user filter
+    # Build query with blocked/banned user filter
     query = {"followerId": user_id}
-    if blocked_users:
-        query["followedId"] = {"$nin": blocked_users}
+    if excluded_users:
+        query["followedId"] = {"$nin": excluded_users}
     
     # Get following relationships
     follows = list(db.follows.find(query).sort("createdAt", -1).skip(skip).limit(limit + 1))
@@ -935,14 +953,17 @@ def search_users(db, query: str, limit: int = 20, exclude_user_id: Optional[str]
         "displayName": {"$regex": safe_query, "$options": "i"}
     }
     
+    # Get banned users (always excluded regardless of caller)
+    banned_users = get_banned_user_ids(db)
+    
     # Exclude current user if provided
     if exclude_user_id:
-        match_filter["userId"] = {"$ne": exclude_user_id}
-        
         # Also exclude users blocked by the searcher
         blocked_users = get_blocked_users(db, exclude_user_id)
-        if blocked_users:
-            match_filter["userId"] = {"$nin": [exclude_user_id] + blocked_users}
+        all_excluded = list(set([exclude_user_id] + blocked_users + banned_users))
+        match_filter["userId"] = {"$nin": all_excluded}
+    elif banned_users:
+        match_filter["userId"] = {"$nin": banned_users}
     
     try:
         cursor = db.user_profiles.find(
