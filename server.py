@@ -466,10 +466,21 @@ def update_task(
             if last_updated:
                 check_toggle_cooldown(user_id, task_id, last_updated)
         
+        # ✅ COMPLETION FINALITY — prevent complete → uncomplete → complete re-award cycling
+        if is_toggling_completion and not update_data["isCompleted"]:
+            if task.get("completedAt") is not None:
+                update_data["wasReversed"] = True
+                update_data["completedAt"] = None
+        
         update_data["updatedAt"] = datetime.utcnow()
         
-        # Check if task is being completed (not already completed)
-        is_completing_task = is_toggling_completion and update_data["isCompleted"] and not task.get("isCompleted", False)
+        # Check if task is being completed (not already completed AND not previously reversed)
+        is_completing_task = (
+            is_toggling_completion
+            and update_data["isCompleted"]
+            and not task.get("isCompleted", False)
+            and not task.get("wasReversed", False)  # Block re-award on reversed tasks
+        )
         
         # ✅ SECURITY: Atomic completion guard - prevents double completion race condition
         if is_completing_task:
