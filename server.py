@@ -695,17 +695,21 @@ def weekly_stats(tz_id: str = Query("UTC"), user_id: str = Depends(get_current_u
         except:
             today = date.today()
             
-        week_start = today - timedelta(days=today.weekday())
+        # Rolling last-7-days window (today-6 … today).
+        # Each entry carries its date + weekday label so both the
+        # home-screen chart (uses "day" label) and the widget
+        # (uses "date" field) render correctly.
+        window_start = today - timedelta(days=6)
         
         daily_stats = []
         total_completed = 0
         total_points = 0
         total_co2 = 0.0
         
-        days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
         
         for i in range(7):
-            day = week_start + timedelta(days=i)
+            day = window_start + timedelta(days=i)
             day_str = day.isoformat()
             
             tasks = list(db.tasks.find({
@@ -718,7 +722,7 @@ def weekly_stats(tz_id: str = Query("UTC"), user_id: str = Depends(get_current_u
             points = sum(t.get("points", 0) for t in tasks)
             
             daily_stats.append({
-                "day": days[i],
+                "day": day_names[day.weekday()],
                 "date": day_str,
                 "completed": completed,
                 "points": points
