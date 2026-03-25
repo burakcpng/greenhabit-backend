@@ -719,7 +719,7 @@ def weekly_stats(tz_id: str = Query("UTC"), user_id: str = Depends(get_current_u
             }))
             
             completed = len(tasks)
-            points = sum(t.get("points", 0) for t in tasks)
+            points = sum(t.get("earnedPoints", t.get("points", 0)) for t in tasks)
             
             daily_stats.append({
                 "day": day_names[day.weekday()],
@@ -774,7 +774,7 @@ def monthly_stats(tz_id: str = Query("UTC"), user_id: str = Depends(get_current_
             }))
             
             completed = len(tasks)
-            points = sum(t.get("points", 0) for t in tasks)
+            points = sum(t.get("earnedPoints", t.get("points", 0)) for t in tasks)
             
             weeks_data.append({
                 "week": week_num,
@@ -2558,7 +2558,7 @@ def export_tasks_endpoint(
         tasks = get_tasks_for_export(db, user_id, year, month)
         
         # Calculate summary
-        total_points = sum(t.get("points", 0) for t in tasks)
+        total_points = sum(t.get("earnedPoints", t.get("points", 0)) for t in tasks)
         co2_saved = round(sum(t.get("co2Kg", 0.3) for t in tasks), 2)
         
         return {

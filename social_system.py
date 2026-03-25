@@ -465,7 +465,7 @@ def get_user_weekly_stats(db, user_id: str) -> Dict:
         }))
         
         completed = len(tasks)
-        points = sum(t.get("points", 0) for t in tasks)
+        points = sum(t.get("earnedPoints", t.get("points", 0)) for t in tasks)
         
         daily_stats.append({
             "day": days[i],
