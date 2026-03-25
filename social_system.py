@@ -524,7 +524,6 @@ def get_global_ranking(db, limit: int = 50, viewer_id: Optional[str] = None) -> 
         {"$match": {"isCompleted": True}},
         {"$group": {
             "_id": "$userId",
-            "taskPoints": {"$sum": "$points"},
             "tasksCompleted": {"$count": {}}
         }}
     ]
@@ -587,10 +586,11 @@ def get_global_ranking(db, limit: int = 50, viewer_id: Optional[str] = None) -> 
 
 def get_user_rank(db, user_id: str) -> Dict:
     """
-    Get user's rank and nearby users
+    Get user's rank and nearby users.
+    Passes viewer_id for Apple Guideline 1.2 block filtering.
     """
-    # Get full ranking
-    full_ranking = get_global_ranking(db, limit=10000)
+    # Get full ranking (filtered by blocked/banned users)
+    full_ranking = get_global_ranking(db, limit=10000, viewer_id=user_id)
     rankings = full_ranking["rankings"]
     total_users = full_ranking["totalUsers"]
     
