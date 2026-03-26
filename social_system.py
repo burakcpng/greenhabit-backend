@@ -503,6 +503,107 @@ def update_user_profile(db, user_id: str, display_name: Optional[str], bio: Opti
     return get_social_profile(db, user_id, viewer_id=user_id)
 
 
+# ======================== TASK LEADERBOARD (Most Liked Tasks) ========================
+
+def get_task_leaderboard(
+    db,
+    limit: int = 30,
+    viewer_id: Optional[str] = None
+) -> Dict:
+    """
+    Get global leaderboard of most-liked user-created tasks.
+    Returns tasks ranked by likeCount descending, with creator info.
+
+    Filters:
+    - Only user-created tasks (creatorType != "system")
+    - Only original tasks (sharedBy is null) — no adopted copies
+    - likeCount >= 1
+    - Excludes blocked & banned users (Apple Guideline 1.2)
+    - Excludes users who opted out of leaderboard (privacy)
+    """
+    # Collect excluded user IDs (blocked + banned)
+    blocked_users = get_blocked_users(db, viewer_id) if viewer_id else []
+    banned_users = get_banned_user_ids(db)
+    excluded_users = list(set(blocked_users + banned_users))
+
+    # Collect privacy opt-out users
+    privacy_opt_outs = db.user_privacy.find(
+        {"appearInLeaderboard": False},
+        {"userId": 1}
+    )
+    opted_out_ids = [doc["userId"] for doc in privacy_opt_outs if doc.get("userId")]
+    all_excluded = list(set(excluded_users + opted_out_ids))
+
+    # Build match filter
+    match_filter = {
+        "creatorType": {"$ne": "system"},
+        "sharedBy": {"$in": [None]},
+        "likeCount": {"$gte": 1},
+    }
+    if all_excluded:
+        match_filter["userId"] = {"$nin": all_excluded}
+
+    # Aggregation pipeline: get tasks + creator display name
+    pipeline = [
+        {"$match": match_filter},
+        {"$sort": {"likeCount": -1, "createdAt": -1}},
+        {"$limit": limit},
+        {
+            "$lookup": {
+                "from": "user_profiles",
+                "localField": "userId",
+                "foreignField": "userId",
+                "as": "creator"
+            }
+        },
+        {"$unwind": {"path": "$creator", "preserveNullAndEmptyArrays": True}},
+        {
+            "$project": {
+                "_id": 0,
+                "id": {"$ifNull": ["$id", {"$toString": "$_id"}]},
+                "title": 1,
+                "details": 1,
+                "category": {"$ifNull": ["$category", ""]},
+                "points": {"$ifNull": ["$points", 0]},
+                "estimatedImpact": 1,
+                "likeCount": {"$ifNull": ["$likeCount", 0]},
+                "addCount": {"$ifNull": ["$addCount", 0]},
+                "createdAt": 1,
+                "creatorId": "$userId",
+                "creatorName": {"$ifNull": ["$creator.displayName", "GreenHabit User"]},
+            }
+        }
+    ]
+
+    raw_tasks = list(db.tasks.aggregate(pipeline))
+
+    # Batch resolve isLiked for the viewer (1 query)
+    task_ids = [t["id"] for t in raw_tasks]
+    liked_ids = set()
+    if viewer_id and task_ids:
+        liked_docs = db.task_likes.find(
+            {"userId": viewer_id, "taskId": {"$in": task_ids}},
+            {"taskId": 1}
+        )
+        liked_ids = {d["taskId"] for d in liked_docs}
+
+    # Assign rank + isLiked
+    entries = []
+    for i, task in enumerate(raw_tasks):
+        task["rank"] = i + 1
+        task["isLiked"] = task["id"] in liked_ids
+        # Serialize datetime for JSON
+        if task.get("createdAt"):
+            task["createdAt"] = task["createdAt"].isoformat() if hasattr(task["createdAt"], "isoformat") else task["createdAt"]
+        entries.append(task)
+
+    return {
+        "tasks": entries,
+        "totalTasks": len(entries),
+        "lastUpdated": datetime.utcnow().isoformat()
+    }
+
+
 # ======================== RANKING SYSTEM ========================
 
 def get_global_ranking(db, limit: int = 50, viewer_id: Optional[str] = None) -> Dict:
@@ -928,6 +1029,9 @@ def ensure_social_indexes(db):
     
     # Created tasks cursor pagination (covers userId + creatorType filter + sort)
     db.tasks.create_index([("userId", 1), ("creatorType", 1), ("createdAt", -1)])
+    
+    # Task leaderboard index (covers creatorType + likeCount sort)
+    db.tasks.create_index([("creatorType", 1), ("likeCount", -1), ("createdAt", -1)])
     
     print("✅ Social indexes created")
 

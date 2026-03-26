@@ -1311,6 +1311,22 @@ def get_my_rank(user_id: str = Depends(get_current_user)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch rank: {str(e)}")
 
+@api.get("/ranking/tasks")
+def get_task_ranking(
+    limit: int = Query(30, ge=1, le=50),
+    user_id: str = Depends(get_current_user)
+):
+    """Get leaderboard of most-liked user-created tasks"""
+    try:
+        db = get_db()
+        from social_system import get_task_leaderboard
+
+        # Apple Guideline 1.2: Pass viewer_id for blocked user filtering
+        result = get_task_leaderboard(db, limit, viewer_id=user_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch task ranking: {str(e)}")
+
 # --- Social Profile Endpoints ---
 
 @api.get("/social/profile")
