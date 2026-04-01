@@ -23,6 +23,7 @@ RATE_LIMITS = {
     "invitation_send": {"requests": 10, "window_seconds": 86400}, # 10 invites/day
     "task_share": {"requests": 20, "window_seconds": 3600},       # 20 shares/hour
     "like": {"requests": 60, "window_seconds": 3600},              # 60 likes/hour
+    "report": {"requests": 5, "window_seconds": 3600},             # 5 reports/hour
 }
 
 # Toggle cooldown: minimum seconds between toggling the same task

@@ -1063,22 +1063,62 @@ def recalculate_streak(user_id: str = Depends(get_current_user)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to recalculate streak: {str(e)}")
 
-# ======================== USER ACCOUNT DELETION ========================
+# ======================== APPLE TOKEN REVOCATION + ACCOUNT DELETION ========================
+# Apple Guideline 5.1.1: Must revoke Apple Sign In tokens BEFORE deleting user data.
+# Flow: Client re-authenticates → sends authorizationCode → backend revokes → then deletes.
 
-@api.delete("/user/delete")
-def delete_user_account(user_id: str = Depends(get_current_user)):
+class RevokeAndDeletePayload(BaseModel):
+    authorizationCode: str = Field(..., min_length=1, max_length=2048)
+
+@api.post("/auth/revoke-and-delete")
+def revoke_and_delete_account(
+    payload: RevokeAndDeletePayload,
+    user_id: str = Depends(get_current_user)
+):
     """
-    Delete user account and ALL associated data.
-    ✅ CRITICAL: 14-step cascading deletion of ALL user-related documents.
-    Apple Guideline 5.1.1(v) compliance: Full account deletion support.
-    GDPR Article 17 compliance: Right to Erasure.
+    FULL Apple-compliant account deletion flow:
+    1. Revoke Apple Sign In tokens (Guideline 5.1.1)
+    2. Delete ALL user data (GDPR Article 17)
     
-    Collections deleted:   tasks, preferences, teams, team_members,
-                           team_invitations, team_task_shares, user_profiles,
-                           follows, user_privacy, device_tokens, users,
-                           habit_completions, task_likes, task_adds,
-                           invitations, user_blocks
-    Collections anonymized: shared_tasks, reports, task_shares
+    CRITICAL: User data is NEVER deleted if revocation fails.
+    This endpoint is idempotent — safe to retry on network failure.
+    """
+    try:
+        # ── Step 1: Revoke Apple tokens ──────────────────────────
+        # This call exchanges the authorizationCode for a refresh_token,
+        # then calls Apple's /auth/revoke endpoint.
+        # If this fails, we abort — no data deletion without revocation.
+        try:
+            AuthSystem.revoke_apple_token(payload.authorizationCode)
+        except HTTPException as revoke_err:
+            print(f"❌ Apple token revocation failed for {user_id}: {revoke_err.detail}")
+            raise HTTPException(
+                status_code=revoke_err.status_code,
+                detail=f"Account deletion aborted: {revoke_err.detail}"
+            )
+        except Exception as e:
+            print(f"❌ Unexpected revocation error for {user_id}: {e}")
+            raise HTTPException(
+                status_code=502,
+                detail="Account deletion aborted: Could not revoke Apple credentials."
+            )
+        
+        # ── Step 2: Delete ALL user data (cascading) ─────────────
+        # Reuse the existing deletion logic
+        return _perform_full_deletion(user_id)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Revoke-and-delete failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Account deletion failed: {str(e)}")
+
+
+def _perform_full_deletion(user_id: str):
+    """
+    Internal function: Cascading deletion of ALL user data.
+    Extracted from /user/delete so both endpoints can reuse it.
+    14-step deletion covering all collections.
     """
     try:
         db = get_db()
@@ -1086,58 +1126,41 @@ def delete_user_account(user_id: str = Depends(get_current_user)):
         print(f"🗑️ Starting full account deletion for user: {user_id}")
         
         # ── Phase 1: Primary Data ──────────────────────────────
-        
-        # 1. Delete all tasks
         tasks_result = db.tasks.delete_many({"userId": user_id})
         print(f"   1. Deleted {tasks_result.deleted_count} tasks")
         
-        # 2. Delete preferences
         prefs_result = db.preferences.delete_many({"userId": user_id})
         print(f"   2. Deleted {prefs_result.deleted_count} preferences")
         
         # ── Phase 2: Team System ───────────────────────────────
-        
-        # 3. Handle team memberships (teams, team_members, team_invitations, team_task_shares)
         from team_system import handle_user_deletion_teams
         team_cleanup = handle_user_deletion_teams(db, user_id)
         print(f"   3. Team cleanup: {team_cleanup}")
         
         # ── Phase 3: Social System ─────────────────────────────
-        
-        # 4. Delete social connections (user_profiles, follows, user_privacy)
         from social_system import handle_user_deletion_social
         social_cleanup = handle_user_deletion_social(db, user_id)
         print(f"   4. Social cleanup: {social_cleanup}")
         
         # ── Phase 4: Notification System ───────────────────────
-        
-        # 5. Delete device tokens (APNS)
         tokens_result = db.device_tokens.delete_many({"userId": user_id})
         print(f"   5. Deleted {tokens_result.deleted_count} device tokens")
         
         # ── Phase 5: Streak & Completion History ───────────────
-        
-        # 6. Delete habit completions (streak history — shadow profile risk)
         completions_result = db.habit_completions.delete_many({"userId": user_id})
         print(f"   6. Deleted {completions_result.deleted_count} habit completions")
         
         # ── Phase 6: Social Activity Footprint ─────────────────
-        
-        # 7. Delete task likes
         likes_result = db.task_likes.delete_many({"userId": user_id})
         print(f"   7. Deleted {likes_result.deleted_count} task likes")
         
-        # 8. Delete task adds (adoption records)
         adds_result = db.task_adds.delete_many({"userId": user_id})
         print(f"   8. Deleted {adds_result.deleted_count} task adds")
         
-        # 9. Delete invitations (rewards_system references)
         invitations_result = db.invitations.delete_many({"senderId": user_id})
         print(f"   9. Deleted {invitations_result.deleted_count} invitations")
         
         # ── Phase 7: Block Relationships ───────────────────────
-        
-        # 10. Delete block relationships (bidirectional)
         blocks_result = db.user_blocks.delete_many({
             "$or": [
                 {"blockerUserId": user_id},
@@ -1147,16 +1170,12 @@ def delete_user_account(user_id: str = Depends(get_current_user)):
         print(f"  10. Deleted {blocks_result.deleted_count} block records")
         
         # ── Phase 8: Anonymize Shared Content ──────────────────
-        # (Retain content for other users, strip PII — no reverse-link possible)
-        
-        # 11. Anonymize shared tasks (creatorId → "[deleted]")
         shared_result = db.shared_tasks.update_many(
             {"creatorId": user_id},
             {"$set": {"creatorId": "[deleted]"}}
         )
         print(f"  11. Anonymized {shared_result.modified_count} shared tasks")
         
-        # 12. Anonymize reports (retain for moderation, strip identity)
         reports_reporter = db.reports.update_many(
             {"reporterId": user_id},
             {"$set": {"reporterId": "[deleted]"}}
@@ -1167,7 +1186,6 @@ def delete_user_account(user_id: str = Depends(get_current_user)):
         )
         print(f"  12. Anonymized {reports_reporter.modified_count + reports_reported.modified_count} report records")
         
-        # 13. Anonymize task_shares (block_system references)
         task_shares_result = db.task_shares.update_many(
             {"senderId": user_id},
             {"$set": {"senderId": "[deleted]"}}
@@ -1175,13 +1193,10 @@ def delete_user_account(user_id: str = Depends(get_current_user)):
         print(f"  13. Anonymized {task_shares_result.modified_count} task shares")
         
         # ── Phase 9: Identity Record (LAST) ────────────────────
-        
-        # 14. Delete user record (Apple ID mapping — must be last)
         user_result = db.users.delete_one({"userId": user_id})
         print(f"  14. Deleted {user_result.deleted_count} user records")
         
         print(f"✅ Full account deletion complete for: {user_id}")
-        print(f"   Zero records with userId={user_id} remain in any collection.")
         
         return {
             "success": True,
@@ -1196,6 +1211,20 @@ def delete_user_account(user_id: str = Depends(get_current_user)):
             status_code=500, 
             detail=f"Failed to delete account: {str(e)}"
         )
+
+
+# ======================== USER ACCOUNT DELETION (LEGACY) ========================
+
+@api.delete("/user/delete")
+def delete_user_account(user_id: str = Depends(get_current_user)):
+    """
+    LEGACY: Delete user account without Apple token revocation.
+    Kept for backward compatibility. Prefer /auth/revoke-and-delete.
+    Apple Guideline 5.1.1(v) + GDPR Article 17 compliance.
+    """
+    return _perform_full_deletion(user_id)
+
+
 
 
 # ======================== NEW: SHARING ROUTES ========================
@@ -1696,6 +1725,9 @@ async def report_user_endpoint(
     Triggers immediate Telegram notification for 24-hour response compliance.
     """
     try:
+        # Rate limit: prevent report spam
+        check_rate_limit(user_id, "report")
+        
         db = get_db()
         
         # Prevent self-reporting
@@ -2795,7 +2827,7 @@ def get_ban_status(user_id: str = Depends(get_current_user)):
         
         return {
             "isBanned": is_banned,
-            "appealUrl": "https://www.instagram.com/greenhabittask"
+            "appealUrl": "https://www.instagram.com/greenhabitofficial"
         }
         
     except Exception as e:
@@ -2803,7 +2835,7 @@ def get_ban_status(user_id: str = Depends(get_current_user)):
         # Default to not banned on error (fail open for UX)
         return {
             "isBanned": False,
-            "appealUrl": "https://www.instagram.com/greenhabittask"
+            "appealUrl": "https://www.instagram.com/greenhabitofficial"
         }
 
 
@@ -2913,6 +2945,9 @@ def share_landing_page(share_id: str):
         ios_url = f"greenhabit://share?id={share_id}" # Fallback custom scheme
         universal_url = f"https://greenhabit-backend.onrender.com/share/{share_id}"
         
+        app_store_id = os.getenv("APP_STORE_ID", "")
+        smart_banner_tag = f'<meta name="apple-itunes-app" content="app-id={app_store_id}, app-argument={universal_url}">' if app_store_id else ""
+        
         html_content = f"""
         <!DOCTYPE html>
         <html lang="en">
@@ -2923,7 +2958,7 @@ def share_landing_page(share_id: str):
             <title>{title} • GreenHabit</title>
             <meta property="og:title" content="{title}">
             <meta property="og:description" content="Earn {points} points and save carbon with GreenHabit!">
-            <meta name="apple-itunes-app" content="app-id=YOUR_APP_ID, app-argument={universal_url}">
+            {smart_banner_tag}
             
             <style>
                 :root {{

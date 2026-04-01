@@ -8,6 +8,9 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 import base64
 import json
+import logging
+
+logger = logging.getLogger("greenhabit.auth")
 
 # Configuration
 # SECURITY: All secrets MUST be provided via environment variables
@@ -19,7 +22,12 @@ ACCESS_TOKEN_EXPIRE_DAYS = 30
 APPLE_PUBLIC_KEYS_URL = "https://appleid.apple.com/auth/keys"
 APPLE_ISSUER = "https://appleid.apple.com"
 # Your App Bundle ID (MUST match your iOS app's Bundle Identifier exactly)
-APPLE_CLIENT_ID = "burakcpng.GreenHabit" 
+APPLE_CLIENT_ID = "burakcpng.GreenHabit"
+
+# Apple Token Revocation (Guideline 5.1.1)
+APPLE_TEAM_ID = os.getenv("APPLE_TEAM_ID", "9264X3737M")
+APPLE_KEY_ID = os.getenv("APPLE_KEY_ID", "K7P6P48699")
+APPLE_P8_KEY_PATH = os.getenv("APPLE_P8_KEY_PATH", "AuthKey_K7P6P48699.p8")
 
 class AuthSystem:
     _apple_public_keys = None
@@ -100,6 +108,111 @@ class AuthSystem:
         except Exception as e:
             print(f"❌ Apple Auth Error: {str(e)}")
             raise HTTPException(status_code=401, detail="Authentication failed")
+
+    @staticmethod
+    def generate_client_secret() -> str:
+        """
+        Generate a client_secret JWT for Apple Sign In Server-to-Server auth.
+        Required for /auth/token and /auth/revoke calls.
+        Uses the .p8 private key from Apple Developer Console.
+        """
+        try:
+            with open(APPLE_P8_KEY_PATH, "r") as f:
+                private_key = f.read()
+        except FileNotFoundError:
+            # Fallback: try from env var (for cloud deployments)
+            private_key = os.getenv("APPLE_P8_KEY_CONTENT")
+            if not private_key:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Apple .p8 key not found. Cannot generate client secret."
+                )
+
+        now = int(time.time())
+        payload = {
+            "iss": APPLE_TEAM_ID,
+            "iat": now,
+            "exp": now + (86400 * 180),  # Max 6 months
+            "aud": "https://appleid.apple.com",
+            "sub": APPLE_CLIENT_ID,
+        }
+        headers = {
+            "kid": APPLE_KEY_ID,
+            "alg": "ES256",
+        }
+        return jwt.encode(payload, private_key, algorithm="ES256", headers=headers)
+
+    @classmethod
+    def exchange_code_for_token(cls, authorization_code: str) -> str:
+        """
+        Exchange Apple authorizationCode for a refresh_token.
+        This is Step 1 of the revocation flow.
+        """
+        client_secret = cls.generate_client_secret()
+
+        response = requests.post(
+            "https://appleid.apple.com/auth/token",
+            data={
+                "client_id": APPLE_CLIENT_ID,
+                "client_secret": client_secret,
+                "code": authorization_code,
+                "grant_type": "authorization_code",
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=10,
+        )
+
+        if response.status_code != 200:
+            logger.error(f"Apple /auth/token failed: {response.status_code} {response.text}")
+            raise HTTPException(
+                status_code=502,
+                detail="Failed to exchange authorization code with Apple."
+            )
+
+        data = response.json()
+        refresh_token = data.get("refresh_token")
+        if not refresh_token:
+            raise HTTPException(
+                status_code=502,
+                detail="Apple did not return a refresh_token."
+            )
+        return refresh_token
+
+    @classmethod
+    def revoke_apple_token(cls, authorization_code: str) -> bool:
+        """
+        Full Apple token revocation flow (Guideline 5.1.1):
+        1. Exchange authorizationCode → refresh_token
+        2. POST /auth/revoke with refresh_token
+        Idempotent: re-revoking an already-revoked token returns 200.
+        """
+        # Step 1: Get refresh_token
+        refresh_token = cls.exchange_code_for_token(authorization_code)
+
+        # Step 2: Revoke
+        client_secret = cls.generate_client_secret()
+
+        response = requests.post(
+            "https://appleid.apple.com/auth/revoke",
+            data={
+                "client_id": APPLE_CLIENT_ID,
+                "client_secret": client_secret,
+                "token": refresh_token,
+                "token_type_hint": "refresh_token",
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=10,
+        )
+
+        if response.status_code == 200:
+            logger.info("✅ Apple token revoked successfully")
+            return True
+        else:
+            logger.error(f"Apple /auth/revoke failed: {response.status_code} {response.text}")
+            raise HTTPException(
+                status_code=502,
+                detail="Failed to revoke Apple token. Account deletion aborted."
+            )
 
     @staticmethod
     def create_session_token(user_id: str) -> str:
