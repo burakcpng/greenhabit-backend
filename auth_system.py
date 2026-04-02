@@ -143,16 +143,23 @@ class AuthSystem:
 
         # ── Load .p8 private key ──
         private_key = None
+        key_source = "unknown"
         try:
             with open(APPLE_P8_KEY_PATH, "r") as f:
                 private_key = f.read()
-                logger.info("✅ Loaded Apple .p8 key from file")
+                key_source = f"file:{APPLE_P8_KEY_PATH}"
         except (FileNotFoundError, TypeError):
             # TypeError catches APPLE_P8_KEY_PATH being None
             # Fallback: try from env var (for cloud deployments like Render)
-            private_key = os.getenv("APPLE_P8_KEY_CONTENT")
-            if private_key:
-                logger.info("✅ Loaded Apple .p8 key from APPLE_P8_KEY_CONTENT env")
+            raw_key = os.getenv("APPLE_P8_KEY_CONTENT")
+            if raw_key:
+                # ── CRITICAL: Normalize newlines ──
+                # When pasting a PEM key into Render/Heroku env var UI,
+                # actual newlines may be stored as literal "\n" strings.
+                # The cryptography library needs real newline characters
+                # to parse the PEM format correctly.
+                private_key = raw_key.replace("\\n", "\n").strip()
+                key_source = "env:APPLE_P8_KEY_CONTENT"
             else:
                 logger.error(
                     "❌ Apple .p8 key not found. Checked file '%s' and env APPLE_P8_KEY_CONTENT.",
@@ -162,6 +169,24 @@ class AuthSystem:
                     status_code=500,
                     detail="Server misconfiguration: Apple .p8 key not found."
                 )
+
+        # ── Validate PEM format ──
+        if "-----BEGIN PRIVATE KEY-----" not in private_key:
+            logger.error(
+                "❌ .p8 key from %s does not contain valid PEM header. "
+                "Key length: %d, first 30 chars: '%s'",
+                key_source, len(private_key), private_key[:30]
+            )
+            raise HTTPException(
+                status_code=500,
+                detail="Server misconfiguration: .p8 key is not valid PEM format."
+            )
+
+        # ── Diagnostic logging (safe — no secrets exposed) ──
+        logger.info(
+            "🔐 Generating client_secret: team=%s, key_id=%s, client_id=%s, source=%s, key_len=%d",
+            APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_CLIENT_ID, key_source, len(private_key)
+        )
 
         now = int(time.time())
         payload = {
@@ -198,10 +223,40 @@ class AuthSystem:
         )
 
         if response.status_code != 200:
-            logger.error(f"Apple /auth/token failed: {response.status_code} {response.text}")
+            # Parse Apple's error for specific diagnosis
+            error_body = response.text
+            apple_error = ""
+            try:
+                error_data = response.json()
+                apple_error = error_data.get("error", "")
+            except Exception:
+                pass
+
+            # ── Targeted diagnostics per Apple error code ──
+            if apple_error == "invalid_client":
+                logger.error(
+                    "❌ Apple /auth/token → invalid_client. "
+                    "Check: (1) APPLE_TEAM_ID='%s' is correct, "
+                    "(2) APPLE_KEY_ID='%s' matches the .p8 key, "
+                    "(3) APPLE_P8_KEY_CONTENT has proper newlines (not escaped \\\\n), "
+                    "(4) The key has 'Sign in with Apple' enabled in Apple Developer Console.",
+                    APPLE_TEAM_ID, APPLE_KEY_ID
+                )
+            elif apple_error == "invalid_grant":
+                logger.error(
+                    "❌ Apple /auth/token → invalid_grant. "
+                    "The authorization code has expired or was already used. "
+                    "Codes are single-use and expire in 5 minutes."
+                )
+            else:
+                logger.error(
+                    "❌ Apple /auth/token failed: %d %s",
+                    response.status_code, error_body
+                )
+
             raise HTTPException(
                 status_code=502,
-                detail="Failed to exchange authorization code with Apple."
+                detail=f"Apple token exchange failed: {apple_error or error_body}"
             )
 
         data = response.json()
