@@ -27,7 +27,18 @@ APPLE_CLIENT_ID = "com.burakcpng.GreenHabit"
 # Apple Token Revocation (Guideline 5.1.1)
 APPLE_TEAM_ID = os.getenv("APPLE_TEAM_ID")
 APPLE_KEY_ID = os.getenv("APPLE_KEY_ID")
-APPLE_P8_KEY_PATH = os.getenv("APPLE_P8_KEY_PATH",)
+# Default to the local .p8 filename for development.
+# In production (Render), set APPLE_P8_KEY_CONTENT env var instead
+# since the .p8 file is (correctly) gitignored.
+APPLE_P8_KEY_PATH = os.getenv("APPLE_P8_KEY_PATH", "AuthKey_K7P6P48699.p8")
+
+# ── Startup validation: warn if revocation env vars are missing ──
+if not APPLE_TEAM_ID:
+    logger.warning("⚠️ APPLE_TEAM_ID not set — account deletion (token revocation) will fail!")
+if not APPLE_KEY_ID:
+    logger.warning("⚠️ APPLE_KEY_ID not set — account deletion (token revocation) will fail!")
+if not os.path.isfile(APPLE_P8_KEY_PATH) and not os.getenv("APPLE_P8_KEY_CONTENT"):
+    logger.warning("⚠️ Neither APPLE_P8_KEY_PATH file nor APPLE_P8_KEY_CONTENT env found — account deletion will fail!")
 
 class AuthSystem:
     _apple_public_keys = None
@@ -116,16 +127,40 @@ class AuthSystem:
         Required for /auth/token and /auth/revoke calls.
         Uses the .p8 private key from Apple Developer Console.
         """
+        # ── Validate required env vars before attempting ──
+        if not APPLE_TEAM_ID:
+            logger.error("❌ APPLE_TEAM_ID is not set. Cannot generate Apple client secret.")
+            raise HTTPException(
+                status_code=500,
+                detail="Server misconfiguration: APPLE_TEAM_ID not set."
+            )
+        if not APPLE_KEY_ID:
+            logger.error("❌ APPLE_KEY_ID is not set. Cannot generate Apple client secret.")
+            raise HTTPException(
+                status_code=500,
+                detail="Server misconfiguration: APPLE_KEY_ID not set."
+            )
+
+        # ── Load .p8 private key ──
+        private_key = None
         try:
             with open(APPLE_P8_KEY_PATH, "r") as f:
                 private_key = f.read()
-        except FileNotFoundError:
-            # Fallback: try from env var (for cloud deployments)
+                logger.info("✅ Loaded Apple .p8 key from file")
+        except (FileNotFoundError, TypeError):
+            # TypeError catches APPLE_P8_KEY_PATH being None
+            # Fallback: try from env var (for cloud deployments like Render)
             private_key = os.getenv("APPLE_P8_KEY_CONTENT")
-            if not private_key:
+            if private_key:
+                logger.info("✅ Loaded Apple .p8 key from APPLE_P8_KEY_CONTENT env")
+            else:
+                logger.error(
+                    "❌ Apple .p8 key not found. Checked file '%s' and env APPLE_P8_KEY_CONTENT.",
+                    APPLE_P8_KEY_PATH
+                )
                 raise HTTPException(
                     status_code=500,
-                    detail="Apple .p8 key not found. Cannot generate client secret."
+                    detail="Server misconfiguration: Apple .p8 key not found."
                 )
 
         now = int(time.time())
