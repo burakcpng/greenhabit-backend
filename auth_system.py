@@ -22,7 +22,7 @@ ACCESS_TOKEN_EXPIRE_DAYS = 30
 APPLE_PUBLIC_KEYS_URL = "https://appleid.apple.com/auth/keys"
 APPLE_ISSUER = "https://appleid.apple.com"
 # Your App Bundle ID (MUST match your iOS app's Bundle Identifier exactly)
-APPLE_CLIENT_ID = "com.burakcpng.GreenHabit"
+APPLE_CLIENT_ID = os.getenv("APPLE_CLIENT_ID", "com.burakcpng.GreenHabit")
 
 # Apple Token Revocation (Guideline 5.1.1)
 APPLE_TEAM_ID = os.getenv("APPLE_TEAM_ID")

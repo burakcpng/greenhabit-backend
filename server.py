@@ -760,6 +760,7 @@ def monthly_stats(tz_id: str = Query("UTC"), user_id: str = Depends(get_current_
         weeks_data = []
         total_completed = 0
         total_points = 0
+        total_co2 = 0.0
         
         current_date = month_start
         week_num = 1
