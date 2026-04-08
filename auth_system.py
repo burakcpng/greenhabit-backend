@@ -27,10 +27,15 @@ APPLE_CLIENT_ID = os.getenv("APPLE_CLIENT_ID", "com.burakcpng.GreenHabit")
 # Apple Token Revocation (Guideline 5.1.1)
 APPLE_TEAM_ID = os.getenv("APPLE_TEAM_ID")
 APPLE_KEY_ID = os.getenv("APPLE_KEY_ID")
-# Default to the local .p8 filename for development.
-# In production (Render), set APPLE_P8_KEY_CONTENT env var instead
-# since the .p8 file is (correctly) gitignored.
-APPLE_P8_KEY_PATH = os.getenv("APPLE_P8_KEY_PATH", "AuthKey_K7P6P48699.p8")
+# Key resolution priority:
+#   1. APPLE_P8_KEY_PATH (explicit override)
+#   2. APNS_AUTH_KEY_PATH (reuse the APNs secret file — same .p8 key)
+#   3. Local dev fallback: "AuthKey_K7P6P48699.p8"
+APPLE_P8_KEY_PATH = (
+    os.getenv("APPLE_P8_KEY_PATH")
+    or os.getenv("APNS_AUTH_KEY_PATH")
+    or "AuthKey_K7P6P48699.p8"
+)
 
 # ── Startup validation: warn if revocation env vars are missing ──
 if not APPLE_TEAM_ID:
@@ -38,7 +43,10 @@ if not APPLE_TEAM_ID:
 if not APPLE_KEY_ID:
     logger.warning("⚠️ APPLE_KEY_ID not set — account deletion (token revocation) will fail!")
 if not os.path.isfile(APPLE_P8_KEY_PATH) and not os.getenv("APPLE_P8_KEY_CONTENT"):
-    logger.warning("⚠️ Neither APPLE_P8_KEY_PATH file nor APPLE_P8_KEY_CONTENT env found — account deletion will fail!")
+    logger.warning(
+        "⚠️ .p8 key not found at '%s' and APPLE_P8_KEY_CONTENT not set — account deletion will fail!",
+        APPLE_P8_KEY_PATH
+    )
 
 class AuthSystem:
     _apple_public_keys = None
