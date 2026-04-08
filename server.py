@@ -1446,7 +1446,7 @@ def get_public_profile(
                     "message": "This profile is private"
                 }
         
-        profile = get_social_profile(db, target_id, viewer_id)
+        profile = get_social_profile(db, target_id, viewer_id, as_public=True)
         
         # Add rank
         rank_info = get_user_rank(db, target_id)

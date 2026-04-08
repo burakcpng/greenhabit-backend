@@ -330,10 +330,11 @@ def get_banned_user_ids(db) -> List[str]:
 
 # ======================== USER PROFILE EXTENSION ========================
 
-def get_social_profile(db, user_id: str, viewer_id: Optional[str] = None) -> Dict:
+def get_social_profile(db, user_id: str, viewer_id: Optional[str] = None, as_public: bool = False) -> Dict:
     """
     Get extended social profile for a user
     If viewer_id is provided, include isFollowing status
+    If as_public is True, always return "friend view" (only earned achievements)
     """
     from rewards_system import calculate_streak, get_user_profile, ACHIEVEMENTS
     
@@ -363,10 +364,10 @@ def get_social_profile(db, user_id: str, viewer_id: Optional[str] = None) -> Dic
     # Get unlocked achievements with details
     unlocked_ids = set(profile.get("unlockedAchievements", []))
     
-    # For own profile: show ALL achievements with unlock status (progress tracking)
-    # For viewing other users: show ONLY earned achievements (hall of fame)
-    if viewer_id == user_id or viewer_id is None:
-        # Own profile - show all for progress tracking
+    # For own profile (settings): show ALL achievements with unlock status (progress tracking)
+    # For public view (as_public=True) or viewing other users: show ONLY earned achievements
+    if not as_public and (viewer_id == user_id or viewer_id is None):
+        # Own profile (settings) - show all for progress tracking
         achievements = []
         for ach_id, ach in ACHIEVEMENTS.items():
             achievements.append({
@@ -374,7 +375,7 @@ def get_social_profile(db, user_id: str, viewer_id: Optional[str] = None) -> Dic
                 "unlocked": ach_id in unlocked_ids
             })
     else:
-        # Friend's profile - only show earned achievements
+        # Public view / Friend's profile - only show earned achievements
         achievements = []
         for ach_id, ach in ACHIEVEMENTS.items():
             if ach_id in unlocked_ids:
