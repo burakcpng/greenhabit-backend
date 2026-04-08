@@ -765,7 +765,7 @@ def monthly_stats(tz_id: str = Query("UTC"), user_id: str = Depends(get_current_
         current_date = month_start
         week_num = 1
         
-        while current_date.month == today.month and week_num <= 5:
+        while current_date.month == today.month and current_date <= today and week_num <= 5:
             week_end = min(current_date + timedelta(days=6), today)
             
             tasks = list(db.tasks.find({
