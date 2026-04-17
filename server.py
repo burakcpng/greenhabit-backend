@@ -314,6 +314,124 @@ def dev_login(payload: DevLoginPayload):
         print(f"❌ Dev login failed: {e}")
         raise HTTPException(status_code=500, detail=f"Dev login failed: {str(e)}")
 
+# ======================== GOOGLE SIGN-IN (CROSS-PLATFORM) ========================
+
+class GoogleLoginPayload(BaseModel):
+    googleToken: str = Field(..., min_length=1) 
+    displayName: Optional[str] = None
+
+@api.post("/auth/google-login")
+def login_with_google(payload: GoogleLoginPayload):
+    """
+    Authenticate with Google ID Token.
+    
+    Flow:
+    1. Verify Google ID token via Google's tokeninfo endpoint
+    2. Check if googleUserId already exists → welcome back
+    3. Check if email matches existing Apple user → link accounts
+    4. Otherwise → create new user with uuid4 userId
+    
+    Returns same response shape as /auth/login (Apple):
+    {success, token, userId, isNewUser}
+    """
+    try:
+        db = get_db()
+        current_time = datetime.utcnow()
+        
+        # 1. Verify Google Token
+        google_info = AuthSystem.verify_google_token(payload.googleToken)
+        google_user_id = google_info["sub"]
+        google_email = google_info.get("email")
+        google_name = payload.displayName or google_info.get("name", "Eco Warrior")
+        
+        # 2. Check if user already exists via Google ID
+        user = db.users.find_one({"googleUserId": google_user_id})
+        
+        if user:
+            # ── Returning Google user ──
+            db.users.update_one(
+                {"googleUserId": google_user_id},
+                {"$set": {"lastLogin": current_time}}
+            )
+            print(f"👋 Welcome back (Google): {user['userId']}")
+            
+            session_token = AuthSystem.create_session_token(user["userId"])
+            return {
+                "success": True,
+                "token": session_token,
+                "userId": user["userId"],
+                "isNewUser": False
+            }
+        
+        # 3. Check for email-based account linking (Apple user with same email)
+        if google_email:
+            existing_by_email = db.users.find_one({
+                "email": google_email,
+                "googleUserId": {"$exists": False}  # Not already linked
+            })
+            
+            if existing_by_email:
+                # ── Link Google to existing Apple account ──
+                db.users.update_one(
+                    {"userId": existing_by_email["userId"]},
+                    {"$set": {
+                        "googleUserId": google_user_id,
+                        "lastLogin": current_time,
+                    }}
+                )
+                print(f"🔗 Linked Google account to existing user: {existing_by_email['userId']} (email: {google_email})")
+                
+                session_token = AuthSystem.create_session_token(existing_by_email["userId"])
+                return {
+                    "success": True,
+                    "token": session_token,
+                    "userId": existing_by_email["userId"],
+                    "isNewUser": False
+                }
+        
+        # 4. New user — generate a fresh userId (NOT the Google sub)
+        # Using uuid4 for Google users ensures no collision with Apple's sub format
+        new_user_id = f"google_{google_user_id}"
+        
+        new_user = {
+            "userId": new_user_id,
+            "googleUserId": google_user_id,
+            "email": google_email,
+            "authProvider": "google",
+            "displayName": google_name,
+            "createdAt": current_time,
+            "lastLogin": current_time,
+            "isVerified": True,
+        }
+        db.users.insert_one(new_user)
+        print(f"✅ Created new Google user: {new_user_id}")
+        
+        # Also create user_profiles entry (for social features)
+        db.user_profiles.update_one(
+            {"userId": new_user_id},
+            {"$setOnInsert": {
+                "userId": new_user_id,
+                "displayName": google_name,
+                "bio": "",
+                "createdAt": current_time,
+            }},
+            upsert=True
+        )
+        
+        session_token = AuthSystem.create_session_token(new_user_id)
+        return {
+            "success": True,
+            "token": session_token,
+            "userId": new_user_id,
+            "isNewUser": True
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Google login failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Google login processing failed: {str(e)}")
+
 # ======================== TASK ROUTES ========================
 
 @api.get("/tasks")

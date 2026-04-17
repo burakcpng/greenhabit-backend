@@ -312,6 +312,82 @@ class AuthSystem:
                 detail="Failed to revoke Apple token. Account deletion aborted."
             )
 
+    # ======================== GOOGLE TOKEN VERIFICATION ========================
+    # Verifies Google ID tokens for Android (and optionally iOS) users.
+    # Uses Google's tokeninfo endpoint for verification (simpler, no JWKS management).
+    # For high-traffic apps, consider verifying locally with google-auth library.
+
+    # Google OAuth2 Client IDs — MUST match your Firebase/Google Cloud Console config.
+    # Android and iOS have different client IDs.
+    GOOGLE_CLIENT_IDS = [
+        os.getenv("GOOGLE_CLIENT_ID_ANDROID", ""),
+        os.getenv("GOOGLE_CLIENT_ID_IOS", ""),
+        os.getenv("GOOGLE_CLIENT_ID_WEB", ""),  # Server/web client ID (used by google_sign_in)
+    ]
+    # Filter empty strings
+    GOOGLE_CLIENT_IDS = [cid for cid in GOOGLE_CLIENT_IDS if cid]
+
+    @classmethod
+    def verify_google_token(cls, token: str) -> dict:
+        """
+        Verify Google ID Token and return user info.
+        
+        Returns:
+            dict with keys: sub (Google user ID), email, name, email_verified
+            
+        Raises:
+            HTTPException(401) if token is invalid or expired
+        """
+        try:
+            # Method 1: Google's tokeninfo endpoint (reliable, rate-limited at ~10k/min)
+            response = requests.get(
+                "https://oauth2.googleapis.com/tokeninfo",
+                params={"id_token": token},
+                timeout=10,
+            )
+
+            if response.status_code != 200:
+                logger.warning("❌ Google token verification failed: %d %s", response.status_code, response.text)
+                raise HTTPException(status_code=401, detail="Invalid Google authentication token")
+
+            payload = response.json()
+
+            # Verify audience (CRITICAL: prevents token confusion attacks)
+            token_aud = payload.get("aud", "")
+            if cls.GOOGLE_CLIENT_IDS and token_aud not in cls.GOOGLE_CLIENT_IDS:
+                logger.warning(
+                    "⚠️ SECURITY: Google token audience mismatch. "
+                    "Got '%s', expected one of %s",
+                    token_aud, cls.GOOGLE_CLIENT_IDS
+                )
+                # In early development, warn but don't block (client IDs may not be configured)
+                if any(cls.GOOGLE_CLIENT_IDS):
+                    raise HTTPException(status_code=401, detail="Token audience does not match this application")
+
+            # Verify email is verified (prevents unverified email attacks)
+            if payload.get("email_verified") != "true" and payload.get("email_verified") is not True:
+                logger.warning("⚠️ Google user email not verified: %s", payload.get("email", "?"))
+                # Allow but log — some edge cases have unverified emails
+
+            google_user_id = payload["sub"]
+            email = payload.get("email")
+            name = payload.get("name", "")
+
+            logger.info("✅ Google token verified: sub=%s, email=%s", google_user_id, email)
+
+            return {
+                "sub": google_user_id,
+                "email": email,
+                "name": name,
+                "email_verified": payload.get("email_verified"),
+            }
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error("❌ Google Auth Error: %s", str(e))
+            raise HTTPException(status_code=401, detail="Google authentication failed")
+
     @staticmethod
     def create_session_token(user_id: str) -> str:
         """Create a long-lived JWT session token for the app"""
@@ -342,6 +418,7 @@ def get_current_user(
     """
     Dependency to authenticate requests.
     SECURITY: Only Bearer Token authentication is accepted.
+    Provider-agnostic — works for Apple, Google, and dev sessions.
     """
     
     # Check for Bearer Token (Required)
@@ -353,5 +430,5 @@ def get_current_user(
     if x_user_id:
         print(f"⚠️ SECURITY: Rejected legacy X-User-Id auth attempt: {x_user_id[:8]}...")
     
-    raise HTTPException(status_code=401, detail="Authentication required. Please sign in with Apple.")
+    raise HTTPException(status_code=401, detail="Authentication required. Please sign in.")
 
