@@ -16,7 +16,7 @@ from task_templates import TASK_POOL, parse_co2_impact
 
 from learning_content import LEARNING_ARTICLES
 from utils.text_safety import ProfanityFilter # ✅ Apple Guideline 1.2 Compliance
-from auth_system import AuthSystem, get_current_user # ✅ NEW Secure Auth
+from auth_system import AuthSystem, get_current_user, is_moderator # ✅ NEW Secure Auth
 from rate_limiter import check_rate_limit, check_toggle_cooldown, check_ip_rate_limit  # ✅ Security: Rate Limiting
 
 app = FastAPI(
@@ -1516,43 +1516,48 @@ def get_public_profile(
     try:
         db = get_db()
         viewer_id = user_id  # The authenticated user is the viewer
-        
+
         from social_system import get_social_profile, get_user_rank
         from block_system import is_blocked
-        
-        # ✅ Apple 1.2: Block guard — bidirectional
-        if viewer_id != target_id and is_blocked(db, viewer_id, target_id):
-            raise HTTPException(status_code=403, detail="Profile unavailable")
-        
-        # 🚫 Ban guard — hide banned user profiles from other users
-        if viewer_id != target_id:
-            target_user = db.users.find_one({"userId": target_id}, {"isBanned": 1})
-            if target_user and target_user.get("isBanned", False):
+
+        # Moderators reviewing reports must always see the full profile so they can
+        # act within the 24-hour Apple Guideline 1.2 window.  The flag is set only
+        # via direct DB access — no API can grant it.
+        viewer_is_moderator = (viewer_id != target_id) and is_moderator(db, viewer_id)
+
+        if not viewer_is_moderator:
+            # ✅ Apple 1.2: Block guard — bidirectional (skip for moderators)
+            if viewer_id != target_id and is_blocked(db, viewer_id, target_id):
                 raise HTTPException(status_code=403, detail="Profile unavailable")
-        
-        # Check if profile is public
-        privacy = db.user_privacy.find_one({"userId": target_id}) or {"profilePublic": False}
-        
-        if not privacy.get("profilePublic", False) and viewer_id != target_id:
-            # Check if viewer is following
-            is_following = db.follows.count_documents({
-                "followerId": viewer_id,
-                "followedId": target_id
-            }) > 0 if viewer_id else False
-            
-            if not is_following:
-                return {
-                    "userId": target_id,
-                    "isPrivate": True,
-                    "message": "This profile is private"
-                }
-        
+
+            # 🚫 Ban guard — hide banned profiles from regular users (moderators
+            #    need to see even banned users to review & action reports)
+            if viewer_id != target_id:
+                target_user = db.users.find_one({"userId": target_id}, {"isBanned": 1})
+                if target_user and target_user.get("isBanned", False):
+                    raise HTTPException(status_code=403, detail="Profile unavailable")
+
+            # Privacy gate — return stub for private profiles (skip for moderators)
+            privacy = db.user_privacy.find_one({"userId": target_id}) or {"profilePublic": False}
+            if not privacy.get("profilePublic", False) and viewer_id != target_id:
+                is_following = db.follows.count_documents({
+                    "followerId": viewer_id,
+                    "followedId": target_id
+                }) > 0 if viewer_id else False
+
+                if not is_following:
+                    return {
+                        "userId": target_id,
+                        "isPrivate": True,
+                        "message": "This profile is private"
+                    }
+
         profile = get_social_profile(db, target_id, viewer_id, as_public=True)
-        
+
         # Add rank
         rank_info = get_user_rank(db, target_id)
         profile["rank"] = rank_info["rank"]
-        
+
         return profile
     except HTTPException:
         raise
@@ -1673,17 +1678,20 @@ def get_user_created_tasks_endpoint(
     try:
         db = get_db()
         from social_system import get_created_tasks, get_blocked_users
-        
-        # ✅ Apple 1.2: Block guard
-        blocked_ids = get_blocked_users(db, current_user)
-        if user_id in blocked_ids:
-            raise HTTPException(status_code=403, detail="Profile unavailable")
-        
-        # Privacy check — if not own profile, respect visibility
-        if current_user != user_id:
-            privacy = db.user_privacy.find_one({"userId": user_id}) or {"profilePublic": False}
-            if not privacy.get("profilePublic", False):
-                return {"tasks": [], "nextCursor": None}
+
+        viewer_is_moderator = (current_user != user_id) and is_moderator(db, current_user)
+
+        if not viewer_is_moderator:
+            # ✅ Apple 1.2: Block guard (skip for moderators)
+            blocked_ids = get_blocked_users(db, current_user)
+            if user_id in blocked_ids:
+                raise HTTPException(status_code=403, detail="Profile unavailable")
+
+            # Privacy check — if not own profile, respect visibility (skip for moderators)
+            if current_user != user_id:
+                privacy = db.user_privacy.find_one({"userId": user_id}) or {"profilePublic": False}
+                if not privacy.get("profilePublic", False):
+                    return {"tasks": [], "nextCursor": None}
         
         result = get_created_tasks(
             db,
