@@ -15,6 +15,8 @@ import threading
 
 RATE_LIMITS = {
     # Action: {"requests": max_requests, "window_seconds": time_window}
+    "auth_login":    {"requests": 5,  "window_seconds": 60},       # 5 login attempts/min per IP
+    "auth_register": {"requests": 5,  "window_seconds": 60},       # 5 register attempts/min per IP
     "task_complete": {"requests": 30, "window_seconds": 60},      # 30 completions/min
     "task_create": {"requests": 20, "window_seconds": 3600},      # 20 tasks/hour
     "task_toggle": {"requests": 10, "window_seconds": 60},        # 10 toggles/min per task
@@ -175,6 +177,11 @@ class RateLimitExceeded(Exception):
         self.action = action
         self.retry_after = retry_after
         super().__init__(f"Rate limit exceeded for {action}")
+
+
+def check_ip_rate_limit(ip: str, action: str) -> bool:
+    """IP-based rate limit for pre-auth endpoints (email login, register)."""
+    return _rate_limiter.check_rate_limit(ip, action)
 
 
 def check_user_rate(user_id: str, action: str, context: Optional[str] = None) -> bool:

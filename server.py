@@ -1,11 +1,13 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Query, Body, Header, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, Query, Body, Header, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from datetime import datetime, date, timedelta
 from typing import List, Optional
 import os
-import random
+import re
 import uuid
+import random
+import bcrypt
 from pymongo import MongoClient, DESCENDING
 from bson import ObjectId
 
@@ -15,7 +17,7 @@ from task_templates import TASK_POOL, parse_co2_impact
 from learning_content import LEARNING_ARTICLES
 from utils.text_safety import ProfanityFilter # ✅ Apple Guideline 1.2 Compliance
 from auth_system import AuthSystem, get_current_user # ✅ NEW Secure Auth
-from rate_limiter import check_rate_limit, check_toggle_cooldown  # ✅ Security: Rate Limiting
+from rate_limiter import check_rate_limit, check_toggle_cooldown, check_ip_rate_limit  # ✅ Security: Rate Limiting
 
 app = FastAPI(
     title="GreenHabit API",
@@ -314,123 +316,104 @@ def dev_login(payload: DevLoginPayload):
         print(f"❌ Dev login failed: {e}")
         raise HTTPException(status_code=500, detail=f"Dev login failed: {str(e)}")
 
-# ======================== GOOGLE SIGN-IN (CROSS-PLATFORM) ========================
+# ======================== EMAIL AUTH ========================
 
-class GoogleLoginPayload(BaseModel):
-    googleToken: str = Field(..., min_length=1) 
-    displayName: Optional[str] = None
+_EMAIL_RE = re.compile(r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$')
+# Pre-computed hash so non-existent-user login takes same time as a real bcrypt verify.
+_DUMMY_HASH = bcrypt.hashpw(b"greenhabit_dummy_placeholder_v1", bcrypt.gensalt(rounds=10))
 
-@api.post("/auth/google-login")
-def login_with_google(payload: GoogleLoginPayload):
-    """
-    Authenticate with Google ID Token.
-    
-    Flow:
-    1. Verify Google ID token via Google's tokeninfo endpoint
-    2. Check if googleUserId already exists → welcome back
-    3. Check if email matches existing Apple user → link accounts
-    4. Otherwise → create new user with uuid4 userId
-    
-    Returns same response shape as /auth/login (Apple):
-    {success, token, userId, isNewUser}
-    """
-    try:
-        db = get_db()
-        current_time = datetime.utcnow()
-        
-        # 1. Verify Google Token
-        google_info = AuthSystem.verify_google_token(payload.googleToken)
-        google_user_id = google_info["sub"]
-        google_email = google_info.get("email")
-        google_name = payload.displayName or google_info.get("name", "Eco Warrior")
-        
-        # 2. Check if user already exists via Google ID
-        user = db.users.find_one({"googleUserId": google_user_id})
-        
-        if user:
-            # ── Returning Google user ──
-            db.users.update_one(
-                {"googleUserId": google_user_id},
-                {"$set": {"lastLogin": current_time}}
-            )
-            print(f"👋 Welcome back (Google): {user['userId']}")
-            
-            session_token = AuthSystem.create_session_token(user["userId"])
-            return {
-                "success": True,
-                "token": session_token,
-                "userId": user["userId"],
-                "isNewUser": False
-            }
-        
-        # 3. Check for email-based account linking (Apple user with same email)
-        if google_email:
-            existing_by_email = db.users.find_one({
-                "email": google_email,
-                "googleUserId": {"$exists": False}  # Not already linked
-            })
-            
-            if existing_by_email:
-                # ── Link Google to existing Apple account ──
-                db.users.update_one(
-                    {"userId": existing_by_email["userId"]},
-                    {"$set": {
-                        "googleUserId": google_user_id,
-                        "lastLogin": current_time,
-                    }}
-                )
-                print(f"🔗 Linked Google account to existing user: {existing_by_email['userId']} (email: {google_email})")
-                
-                session_token = AuthSystem.create_session_token(existing_by_email["userId"])
-                return {
-                    "success": True,
-                    "token": session_token,
-                    "userId": existing_by_email["userId"],
-                    "isNewUser": False
-                }
-        
-        # 4. New user — generate a fresh userId (NOT the Google sub)
-        # Using uuid4 for Google users ensures no collision with Apple's sub format
-        new_user_id = f"google_{google_user_id}"
-        
-        new_user = {
-            "userId": new_user_id,
-            "googleUserId": google_user_id,
-            "email": google_email,
-            "authProvider": "google",
-            "displayName": google_name,
-            "createdAt": current_time,
-            "lastLogin": current_time,
-            "isVerified": True,
-        }
-        db.users.insert_one(new_user)
-        print(f"✅ Created new Google user: {new_user_id}")
-        
-        # Also create user_profiles entry (for social features)
-        db.user_profiles.update_one(
-            {"userId": new_user_id},
-            {"$setOnInsert": {
-                "userId": new_user_id,
-                "displayName": google_name,
-                "bio": "",
-                "createdAt": current_time,
-            }},
-            upsert=True
-        )
-        
-        session_token = AuthSystem.create_session_token(new_user_id)
-        return {
-            "success": True,
-            "token": session_token,
-            "userId": new_user_id,
-            "isNewUser": True
-        }
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"❌ Google login failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Google login processing failed: {str(e)}")
+
+def _sanitize(value: str) -> str:
+    """Strip $ characters to prevent MongoDB operator injection."""
+    return re.sub(r'\$', '', value)
+
+
+class EmailRegisterPayload(BaseModel):
+    email: str = Field(..., max_length=254)
+    password: str = Field(..., min_length=8, max_length=128)
+    username: str = Field(..., min_length=1, max_length=50)
+
+
+class EmailLoginPayload(BaseModel):
+    email: str = Field(..., max_length=254)
+    password: str = Field(..., max_length=128)
+
+
+@api.post("/auth/email-register", status_code=201)
+def email_register(payload: EmailRegisterPayload, request: Request):
+    ip = (request.client.host if request.client else "unknown")
+    check_ip_rate_limit(ip, "auth_register")
+
+    email = _sanitize(payload.email.lower().strip())
+    username = _sanitize(payload.username.strip())
+
+    if not _EMAIL_RE.match(email):
+        raise HTTPException(status_code=422, detail="Invalid email format")
+
+    db = get_db()
+
+    if db.users.find_one({"email": email}):
+        raise HTTPException(status_code=409, detail="An account with this email already exists")
+    if db.users.find_one({"username": username}):
+        raise HTTPException(status_code=409, detail="This username is already taken")
+
+    password_hash = bcrypt.hashpw(payload.password.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("utf-8")
+    user_id = str(uuid.uuid4())
+    current_time = datetime.utcnow()
+
+    db.users.insert_one({
+        "userId": user_id,
+        "appleUserId": None,
+        "email": email,
+        "username": username,
+        "displayName": username,
+        "passwordHash": password_hash,
+        "auth_type": "email",
+        "createdAt": current_time,
+        "lastLogin": current_time,
+        "isVerified": False
+    })
+
+    db.user_profiles.update_one(
+        {"userId": user_id},
+        {"$setOnInsert": {
+            "userId": user_id,
+            "displayName": username,
+            "bio": "",
+            "totalPoints": 0,
+            "createdAt": current_time
+        }},
+        upsert=True
+    )
+
+    session_token = AuthSystem.create_session_token(user_id)
+    return {"success": True, "token": session_token, "userId": user_id, "isNewUser": True}
+
+
+@api.post("/auth/email-login")
+def email_login(payload: EmailLoginPayload, request: Request):
+    ip = (request.client.host if request.client else "unknown")
+    check_ip_rate_limit(ip, "auth_login")
+
+    email = _sanitize(payload.email.lower().strip())
+    db = get_db()
+    user = db.users.find_one({"email": email, "auth_type": "email"})
+
+    _GENERIC_401 = "Invalid email or password"
+
+    if not user:
+        # Constant-time rejection: run a real bcrypt verify so timing doesn't reveal existence
+        bcrypt.checkpw(payload.password.encode("utf-8"), _DUMMY_HASH)
+        raise HTTPException(status_code=401, detail=_GENERIC_401)
+
+    stored_hash = user.get("passwordHash", "").encode("utf-8")
+    if not bcrypt.checkpw(payload.password.encode("utf-8"), stored_hash):
+        raise HTTPException(status_code=401, detail=_GENERIC_401)
+
+    db.users.update_one({"userId": user["userId"]}, {"$set": {"lastLogin": datetime.utcnow()}})
+    session_token = AuthSystem.create_session_token(user["userId"])
+    return {"success": True, "token": session_token, "userId": user["userId"], "isNewUser": False}
+
 
 # ======================== TASK ROUTES ========================
 
