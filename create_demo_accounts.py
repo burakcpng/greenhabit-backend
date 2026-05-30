@@ -2,12 +2,14 @@
 create_demo_accounts.py
 Creates two demo accounts for App Store review.
 
+Idempotent — safe to run multiple times. Uses deterministic, stable user IDs
+so repeated runs update existing data rather than creating orphaned records.
+
 Usage:
     MONGO_URL="..." DB_NAME="GreenHabit_db" python create_demo_accounts.py
 """
 
 import os
-import uuid
 import bcrypt
 import certifi
 from datetime import datetime, timedelta
@@ -19,26 +21,31 @@ DB_NAME = os.getenv("DB_NAME", "GreenHabit_db")
 client = MongoClient(MONGO_URL, serverSelectionTimeoutMS=10000, tlsCAFile=certifi.where())
 db = client[DB_NAME]
 
-PASSWORD_HASH = bcrypt.hashpw(b"GreenHabit2026!", bcrypt.gensalt(rounds=12)).decode("utf-8")
+PASSWORD = b"GreenHabit2026!"
+PASSWORD_HASH = bcrypt.hashpw(PASSWORD, bcrypt.gensalt(rounds=12)).decode("utf-8")
 NOW = datetime.utcnow()
 
-# ── Account A: eco_reviewer ──────────────────────────────────────────────────
-
-USER_A_ID = "demo-reviewer-" + str(uuid.uuid4())[:8]
+# ── Stable, deterministic IDs (never change between runs) ───────────────────
+USER_A_ID    = "demo-reviewer-001"
 USER_A_EMAIL = "reviewer@greenhabit.app"
 USER_A_USERNAME = "eco_reviewer"
 CREATED_A = NOW - timedelta(days=30)
 
+USER_B_ID    = "demo-explorer-001"
+USER_B_EMAIL = "demouser@greenhabit.app"
+USER_B_USERNAME = "green_explorer"
+CREATED_B = NOW - timedelta(days=20)
+
 TASKS_A = [
-    # category, title, points, days_ago (0 = today)
+    # (category, title, points, days_ago)
     ("Energy",    "Switch to LED bulbs",           10, 0),
-    ("Energy",    "Unplug idle devices",            8,  1),
-    ("Energy",    "Air-dry laundry",                9,  2),
-    ("Water",     "Take a 5-min shower",            7,  3),
+    ("Energy",    "Unplug idle devices",             8, 1),
+    ("Energy",    "Air-dry laundry",                 9, 2),
+    ("Water",     "Take a 5-min shower",             7, 3),
     ("Water",     "Fix dripping tap",               12, 4),
-    ("Water",     "Collect rainwater for plants",   8,  5),
+    ("Water",     "Collect rainwater for plants",    8, 5),
     ("Waste",     "Compost food scraps",            10, 6),
-    ("Waste",     "Refuse single-use plastic bag",  9,  7),
+    ("Waste",     "Refuse single-use plastic bag",   9, 7),
     ("Waste",     "Recycle electronics",            15, 8),
     ("Transport", "Walk instead of drive",          10, 9),
     ("Transport", "Cycle to work",                  12, 10),
@@ -59,20 +66,10 @@ TASKS_A = [
     ("Energy",    "Turn off lights when leaving",    7, 25),
     ("Waste",     "Buy second-hand item",            11, 26),
     ("Water",     "Turn off tap while brushing",      5, 27),
-    ("Food",      "Pack a zero-waste lunch",         8, 28),
+    ("Food",      "Pack a zero-waste lunch",          8, 28),
     ("Transport", "Work from home",                  9, 29),
 ]
-
-# Total points must match user_profiles.totalPoints
-TOTAL_POINTS_A = sum(t[2] for t in TASKS_A)  # 263 pts; override to 450 via bonus
-
-
-# ── Account B: green_explorer ─────────────────────────────────────────────────
-
-USER_B_ID = "demo-explorer-" + str(uuid.uuid4())[:8]
-USER_B_EMAIL = "demouser@greenhabit.app"
-USER_B_USERNAME = "green_explorer"
-CREATED_B = NOW - timedelta(days=20)
+TOTAL_POINTS_A = 450  # Bonus-adjusted
 
 TASKS_B = [
     ("Energy",    "Turn off standby electronics",  10, 0),
@@ -91,14 +88,15 @@ TASKS_B = [
     ("Transport", "Cycle to grocery store",         10, 13),
     ("Food",      "Buy seasonal vegetables",         8, 14),
 ]
-
-TOTAL_POINTS_B = sum(t[2] for t in TASKS_B)  # 120 pts
+TOTAL_POINTS_B = sum(t[2] for t in TASKS_B)
 
 
 def create_user(user_id, email, username, password_hash, created_at, total_points, tasks_data):
-    # Upsert user
+    """Idempotent upsert — safe to call multiple times."""
+
+    # Upsert by userId (stable) so repeated runs don't create duplicate users
     db.users.update_one(
-        {"email": email},
+        {"userId": user_id},
         {"$set": {
             "userId": user_id,
             "appleUserId": None,
@@ -122,32 +120,33 @@ def create_user(user_id, email, username, password_hash, created_at, total_point
             "displayName": username,
             "bio": "Demo account for App Store review",
             "totalPoints": total_points,
+            "tasksCompleted": len(tasks_data),
+            "level": max(1, total_points // 100),
             "createdAt": created_at,
         }},
         upsert=True,
     )
 
-    # Upsert preferences so stats endpoints work
+    # Upsert preferences
     db.preferences.update_one(
         {"userId": user_id},
-        {"$setOnInsert": {
+        {"$set": {
             "userId": user_id,
-            "country": "US",
+            "country": "🇺🇸 United States",
             "interests": ["Energy", "Water", "Waste", "Transport", "Food", "Digital", "Social"],
             "language": "en",
         }},
         upsert=True,
     )
 
-    # Insert completed tasks
+    # Upsert tasks (idempotent on userId+title+date)
     for (category, title, points, days_ago) in tasks_data:
         task_date = (NOW - timedelta(days=days_ago)).strftime("%Y-%m-%d")
         completed_at = NOW - timedelta(days=days_ago)
-        task_id = str(uuid.uuid4())
         db.tasks.update_one(
             {"userId": user_id, "title": title, "date": task_date},
             {"$setOnInsert": {
-                "id": task_id,
+                "id": f"{user_id}-task-{title[:20].replace(' ', '-').lower()}",
                 "userId": user_id,
                 "title": title,
                 "details": f"Demo task: {title}",
@@ -167,12 +166,19 @@ def create_user(user_id, email, username, password_hash, created_at, total_point
             upsert=True,
         )
 
-    print(f"✅ Created account: {username} ({email})  |  points={total_points}  |  tasks={len(tasks_data)}")
+    print(f"✅ Upserted account: {username} ({email})  |  points={total_points}  |  tasks={len(tasks_data)}")
 
 
-create_user(USER_A_ID, USER_A_EMAIL, USER_A_USERNAME, PASSWORD_HASH, CREATED_A, 450, TASKS_A)
-create_user(USER_B_ID, USER_B_EMAIL, USER_B_USERNAME, PASSWORD_HASH, CREATED_B, 120, TASKS_B)
+create_user(USER_A_ID, USER_A_EMAIL, USER_A_USERNAME, PASSWORD_HASH, CREATED_A, TOTAL_POINTS_A, TASKS_A)
+create_user(USER_B_ID, USER_B_EMAIL, USER_B_USERNAME, PASSWORD_HASH, CREATED_B, TOTAL_POINTS_B, TASKS_B)
 
-print("\nDemo accounts ready.")
+# Verify the accounts can be looked up
+a = db.users.find_one({"userId": USER_A_ID})
+b = db.users.find_one({"userId": USER_B_ID})
+print(f"\nVerification:")
+print(f"  A found: {bool(a)}  email={a.get('email') if a else 'N/A'}")
+print(f"  B found: {bool(b)}  email={b.get('email') if b else 'N/A'}")
+
+print(f"\nDemo accounts ready.")
 print(f"  A → {USER_A_EMAIL}  /  GreenHabit2026!  (username: {USER_A_USERNAME})")
 print(f"  B → {USER_B_EMAIL}  /  GreenHabit2026!  (username: {USER_B_USERNAME})")

@@ -478,6 +478,11 @@ def get_tasks(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch tasks: {str(e)}")
 
+_ALLOWED_TASK_CATEGORIES = {
+    "Energy", "Water", "Waste", "Transport", "Food", "Digital", "Social", "Other"
+}
+
+
 @api.post("/tasks", status_code=201)
 def create_task(
     payload: CreateTaskPayload,
@@ -486,12 +491,25 @@ def create_task(
     try:
         # ✅ SECURITY: Rate limit task creation (20/hour)
         check_rate_limit(user_id, "task_create")
-        
+
+        # ✅ Apple Guideline 1.2: Profanity filter on UGC fields
+        ProfanityFilter.validate_content(payload.title, "Task Title")
+        if payload.details:
+            ProfanityFilter.validate_content(payload.details, "Task Details")
+
+        # ✅ Category whitelist — reject unknown/arbitrary strings
+        if payload.category not in _ALLOWED_TASK_CATEGORIES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid category '{payload.category}'. "
+                       f"Allowed: {sorted(_ALLOWED_TASK_CATEGORIES)}"
+            )
+
         task_date = payload.date or date.today().isoformat()
         # user_id provided by Depends
-        
+
         task_id = str(uuid.uuid4())
-        
+
         server_co2 = payload.co2Kg if payload.co2Kg is not None else parse_co2_impact(payload.estimatedImpact)
         import math
         server_points = min(100, int(math.ceil(server_co2 * 10)))
