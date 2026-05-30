@@ -1554,6 +1554,11 @@ def get_public_profile(
 
         profile = get_social_profile(db, target_id, viewer_id, as_public=True)
 
+        # Moderators bypass the privacy gate — strip the flag so the client
+        # doesn't mistake a full-data response for the private-profile stub.
+        if viewer_is_moderator:
+            profile.pop("isPrivate", None)
+
         # Add rank
         rank_info = get_user_rank(db, target_id)
         profile["rank"] = rank_info["rank"]
