@@ -920,47 +920,45 @@ def update_team_info(db, team_id: str, user_id: str, name: str = None, descripti
 
 def update_member_role(db, team_id: str, actor_id: str, target_user_id: str, new_role: str) -> Dict:
     """
-    Change a member's role (requires admin+ and must be higher than target).
+    Change a member's role — OWNER (creator) ONLY.
+    Admins cannot promote/demote; only the owner can.
     Cannot promote to 'creator' — use transfer_ownership for that.
+    Max promotion target is 'admin'.
     """
     if new_role not in VALID_ROLES:
         return {"success": False, "message": f"Invalid role: {new_role}"}
-    
+
     if new_role == "creator":
         return {"success": False, "message": "Cannot promote to creator. Use transfer ownership instead."}
-    
+
     # Verify actor is a member
     actor_role = PermissionManager.get_member_role(db, team_id, actor_id)
     if not actor_role:
         return {"success": False, "message": "You are not a member of this team"}
-    
-    # Only admin+ can change roles
-    if not PermissionManager.has_minimum_role(actor_role, "admin"):
-        return {"success": False, "message": "Only admins and above can change roles"}
-    
+
+    # ONLY the team owner (creator) can promote or demote members
+    if actor_role != "creator":
+        return {"success": False, "message": "Only the team owner can change member roles"}
+
     if actor_id == target_user_id:
         return {"success": False, "message": "Cannot change your own role"}
-    
+
     # Verify target is a member
     target_member = db.team_members.find_one({"teamId": team_id, "userId": target_user_id})
     if not target_member:
         return {"success": False, "message": "User is not a member of this team"}
-    
+
     target_current_role = target_member.get("role", "member")
-    
-    # Cannot modify someone of equal or higher role
-    if PermissionManager.get_role_level(target_current_role) >= PermissionManager.get_role_level(actor_role):
-        return {"success": False, "message": "Cannot change the role of someone with equal or higher rank"}
-    
-    # Cannot promote someone to your own level or above (non-creator)
-    if actor_role != "creator" and PermissionManager.get_role_level(new_role) >= PermissionManager.get_role_level(actor_role):
-        return {"success": False, "message": "Cannot promote someone to your own rank or above"}
-    
+
+    # Cannot change the role of another creator (use transfer_ownership instead)
+    if target_current_role == "creator":
+        return {"success": False, "message": "Cannot change the team owner's role. Use transfer ownership."}
+
     db.team_members.update_one(
         {"teamId": team_id, "userId": target_user_id},
         {"$set": {"role": new_role, "updatedAt": datetime.utcnow()}}
     )
-    
+
     return {"success": True, "message": f"Role updated to {new_role}"}
 
 
