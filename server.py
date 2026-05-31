@@ -493,9 +493,13 @@ def create_task(
         check_rate_limit(user_id, "task_create")
 
         # ✅ Apple Guideline 1.2: Profanity filter on UGC fields
-        ProfanityFilter.validate_content(payload.title, "Task Title")
-        if payload.details:
-            ProfanityFilter.validate_content(payload.details, "Task Details")
+        # ValueError from validate_content is a user content error (422), not a server error.
+        try:
+            ProfanityFilter.validate_content(payload.title, "Task Title")
+            if payload.details:
+                ProfanityFilter.validate_content(payload.details, "Task Details")
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
 
         # ✅ Category whitelist — reject unknown/arbitrary strings
         if payload.category not in _ALLOWED_TASK_CATEGORIES:

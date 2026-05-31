@@ -91,24 +91,27 @@ TASKS_B = [
 TOTAL_POINTS_B = sum(t[2] for t in TASKS_B)
 
 
-def create_user(user_id, email, username, password_hash, created_at, total_points, tasks_data):
+def create_user(user_id, email, username, password_hash, created_at, total_points, tasks_data,
+                is_moderator=False):
     """Idempotent upsert — safe to call multiple times."""
 
     # Upsert by userId (stable) so repeated runs don't create duplicate users
+    user_doc = {
+        "userId": user_id,
+        "appleUserId": None,
+        "email": email,
+        "username": username,
+        "displayName": username,
+        "passwordHash": password_hash,
+        "auth_type": "email",
+        "createdAt": created_at,
+        "lastLogin": NOW,
+        "isVerified": True,
+        "isModerator": is_moderator,  # set True for reviewer so moderator bypass works
+    }
     db.users.update_one(
         {"userId": user_id},
-        {"$set": {
-            "userId": user_id,
-            "appleUserId": None,
-            "email": email,
-            "username": username,
-            "displayName": username,
-            "passwordHash": password_hash,
-            "auth_type": "email",
-            "createdAt": created_at,
-            "lastLogin": NOW,
-            "isVerified": True,
-        }},
+        {"$set": user_doc},
         upsert=True,
     )
 
@@ -135,6 +138,22 @@ def create_user(user_id, email, username, password_hash, created_at, total_point
             "country": "🇺🇸 United States",
             "interests": ["Energy", "Water", "Waste", "Transport", "Food", "Digital", "Social"],
             "language": "en",
+        }},
+        upsert=True,
+    )
+
+    # Upsert privacy: public profile so the reviewer can navigate directly to this
+    # account from the leaderboard without needing to follow first.
+    db.user_privacy.update_one(
+        {"userId": user_id},
+        {"$set": {
+            "userId": user_id,
+            "profilePublic": True,
+            "showAchievements": True,
+            "showStats": True,
+            "showInterests": True,
+            "showFollowers": True,
+            "appearInLeaderboard": True,
         }},
         upsert=True,
     )
@@ -169,7 +188,7 @@ def create_user(user_id, email, username, password_hash, created_at, total_point
     print(f"✅ Upserted account: {username} ({email})  |  points={total_points}  |  tasks={len(tasks_data)}")
 
 
-create_user(USER_A_ID, USER_A_EMAIL, USER_A_USERNAME, PASSWORD_HASH, CREATED_A, TOTAL_POINTS_A, TASKS_A)
+create_user(USER_A_ID, USER_A_EMAIL, USER_A_USERNAME, PASSWORD_HASH, CREATED_A, TOTAL_POINTS_A, TASKS_A, is_moderator=True)
 create_user(USER_B_ID, USER_B_EMAIL, USER_B_USERNAME, PASSWORD_HASH, CREATED_B, TOTAL_POINTS_B, TASKS_B)
 
 # Verify the accounts can be looked up
