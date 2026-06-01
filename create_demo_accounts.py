@@ -21,8 +21,8 @@ DB_NAME = os.getenv("DB_NAME", "GreenHabit_db")
 client = MongoClient(MONGO_URL, serverSelectionTimeoutMS=10000, tlsCAFile=certifi.where())
 db = client[DB_NAME]
 
-PASSWORD = b"GreenHabit2026!"
-PASSWORD_HASH = bcrypt.hashpw(PASSWORD, bcrypt.gensalt(rounds=12)).decode("utf-8")
+PASSWORD_STR = os.getenv("DEMO_PASSWORD", "GreenHabit2026!")
+PASSWORD_HASH = bcrypt.hashpw(PASSWORD_STR.encode(), bcrypt.gensalt(rounds=12)).decode("utf-8")
 NOW = datetime.utcnow()
 
 # ── Stable, deterministic IDs (never change between runs) ───────────────────
@@ -199,5 +199,5 @@ print(f"  A found: {bool(a)}  email={a.get('email') if a else 'N/A'}")
 print(f"  B found: {bool(b)}  email={b.get('email') if b else 'N/A'}")
 
 print(f"\nDemo accounts ready.")
-print(f"  A → {USER_A_EMAIL}  /  GreenHabit2026!  (username: {USER_A_USERNAME})")
-print(f"  B → {USER_B_EMAIL}  /  GreenHabit2026!  (username: {USER_B_USERNAME})")
+print(f"  A → {USER_A_EMAIL}  /  {PASSWORD_STR}  (username: {USER_A_USERNAME})")
+print(f"  B → {USER_B_EMAIL}  /  {PASSWORD_STR}  (username: {USER_B_USERNAME})")

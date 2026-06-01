@@ -6,6 +6,7 @@
 
 set -euo pipefail
 BASE="https://greenhabit-backend.onrender.com/api"
+DEMO_PASSWORD="${DEMO_PASSWORD:-GreenHabit2026!}"
 
 pass() { echo "  ✅ $1"; }
 fail() { echo "  ❌ $1"; }
@@ -14,7 +15,7 @@ echo ""
 echo "=== Step 1: Login as reviewer@greenhabit.app ==="
 RESPONSE=$(curl -s -X POST "$BASE/auth/email-login" \
   -H "Content-Type: application/json" \
-  -d '{"email":"reviewer@greenhabit.app","password":"GreenHabit2026!"}')
+  -d "{\"email\":\"reviewer@greenhabit.app\",\"password\":\"$DEMO_PASSWORD\"}")
 echo "$RESPONSE" | python3 -m json.tool
 
 TOKEN=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])" 2>/dev/null || true)
