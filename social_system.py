@@ -1219,6 +1219,7 @@ def get_tasks_for_export(db, user_id: str, year: int, month: int) -> List[Dict]:
                 "points": task.get("points", 0),
                 "estimatedImpact": task.get("estimatedImpact", ""),
                 "evidenceImagePath": task.get("evidenceImagePath"),
+                "evidenceImageData": task.get("evidenceImageData"),
                 "completedAt": task.get("completedAt").isoformat() if task.get("completedAt") else None
             })
         

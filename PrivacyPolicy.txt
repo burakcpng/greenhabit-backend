@@ -37,6 +37,7 @@ GreenHabit is not directed at children under the age of 13.
 If you have questions about these Terms or Privacy Policy, please contact us at:
 
 **Developer**: Burak Çapanoğlu
+**Co-Developer**: Serdar Murat Emeri
 **Email**: burakcpnoglu01@gmail.com
 **Location**: Istanbul, Turkey
 

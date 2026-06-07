@@ -1984,6 +1984,7 @@ class TaskSharePayload(BaseModel):
     category: str = "Other"
     points: int = 10
     estimatedImpact: Optional[str] = None
+    photoData: Optional[str] = None   # base64 JPEG from sender's device
 
 @api.post("/shares")
 async def create_share(
@@ -2005,9 +2006,10 @@ async def create_share(
             "details": payload.details,
             "category": payload.category,
             "points": payload.points,
-            "estimatedImpact": payload.estimatedImpact
+            "estimatedImpact": payload.estimatedImpact,
+            "photoData": payload.photoData
         }
-        
+
         result = await create_task_share(db, user_id, payload.recipientId, task_data)
         
         if not result["success"]:

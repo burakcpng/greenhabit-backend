@@ -41,6 +41,7 @@ async def create_task_share(
         "taskCategory": task_data.get("category", "Other"),
         "taskPoints": task_data.get("points", 10),
         "taskEstimatedImpact": task_data.get("estimatedImpact"),
+        "taskPhotoData": task_data.get("photoData"),   # base64 JPEG from sender
         "status": "pending",
         "createdAt": datetime.utcnow(),
         "updatedAt": datetime.utcnow()
@@ -86,20 +87,23 @@ def get_incoming_shares(db, user_id: str, status: str = "pending") -> List[Dict]
         query["senderId"] = {"$nin": blocked_ids}
     
     shares = list(db.task_shares.find(query).sort("createdAt", -1))
-    
+
     result = []
     for share in shares:
         share["id"] = str(share["_id"])
         del share["_id"]
-        
+
+        # Expose photo data under the key the iOS model expects
+        share["photoData"] = share.pop("taskPhotoData", None)
+
         # Format dates
         if "createdAt" in share and share["createdAt"]:
             share["createdAt"] = share["createdAt"].isoformat() + "Z"
         if "updatedAt" in share and share["updatedAt"]:
             share["updatedAt"] = share["updatedAt"].isoformat() + "Z"
-        
+
         result.append(share)
-    
+
     return result
 
 
@@ -112,19 +116,22 @@ def get_sent_shares(db, user_id: str) -> List[Dict]:
     for share in shares:
         share["id"] = str(share["_id"])
         del share["_id"]
-        
+
         # Get recipient name
         recipient = db.user_profiles.find_one({"userId": share["recipientId"]})
         share["recipientName"] = recipient.get("displayName", "GreenHabit User") if recipient else "GreenHabit User"
-        
+
+        # Expose photo data under the key the iOS model expects
+        share["photoData"] = share.pop("taskPhotoData", None)
+
         # Format dates
         if "createdAt" in share and share["createdAt"]:
             share["createdAt"] = share["createdAt"].isoformat() + "Z"
         if "updatedAt" in share and share["updatedAt"]:
             share["updatedAt"] = share["updatedAt"].isoformat() + "Z"
-        
+
         result.append(share)
-    
+
     return result
 
 
@@ -159,7 +166,8 @@ def accept_share(db, share_id: str, user_id: str) -> Dict:
         "isCompleted": False,
         "createdAt": datetime.utcnow(),
         "updatedAt": datetime.utcnow(),
-        "sharedBy": share["senderId"]
+        "sharedBy": share["senderId"],
+        "evidenceImageData": share.get("taskPhotoData")   # base64 JPEG from sender
     }
     
     task_result = db.tasks.insert_one(task_doc)
