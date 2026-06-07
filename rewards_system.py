@@ -230,10 +230,12 @@ def calculate_rewards(db, user_id: str, task: dict, current_streak: int = 0, tz_
     streak_bonus = min(current_streak * 2, 50) if current_streak > 0 else 0
     
     # Category bonus: First task of this category today
-    today = date.today().isoformat()
+    # Bug 2 fix: use task["date"] (user's local date sent by iOS) instead of
+    # date.today() (UTC server date) — these differ for non-UTC timezones after midnight.
+    task_local_date = task.get("date", date.today().isoformat())
     category_tasks_today = db.tasks.count_documents({
         "userId": user_id,
-        "date": today,
+        "date": task_local_date,
         "category": task["category"],
         "isCompleted": True
     })
@@ -352,7 +354,14 @@ def check_new_achievements(db, user_id: str, current_streak: int = 0, tz_id: str
     unique_categories = {t.get("category") for t in user_tasks if t.get("category")}
     
     # Check today's tasks for perfect day
-    today = date.today().isoformat()
+    # Bug 3 fix: derive "today" from tz_id rather than UTC date.today() so users
+    # in non-UTC timezones receive the achievement correctly near midnight.
+    import zoneinfo as _zi
+    try:
+        from datetime import datetime as _dt
+        today = _dt.now(_zi.ZoneInfo(tz_id)).date().isoformat()
+    except Exception:
+        today = date.today().isoformat()
     today_tasks_list = [t for t in user_tasks if t.get("date") == today]
     
     all_completed_today = len(today_tasks_list) > 0  # Since we only fetched completed tasks

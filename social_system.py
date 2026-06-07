@@ -452,37 +452,40 @@ def get_user_weekly_stats(db, user_id: str) -> Dict:
     daily_stats = []
     total_completed = 0
     total_points = 0
-    
+    total_co2 = 0.0
+
     days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-    
+
     for i in range(7):
         day = week_start + timedelta(days=i)
         day_str = day.isoformat()
-        
+
         tasks = list(db.tasks.find({
             "userId": user_id,
             "date": day_str,
             "isCompleted": True
         }))
-        
+
         completed = len(tasks)
         points = sum(t.get("earnedPoints", t.get("points", 0)) for t in tasks)
-        
+        co2 = sum(t.get("co2Kg", 0.3) for t in tasks)   # Bug 1 fix: use actual co2Kg
+
         daily_stats.append({
             "day": days[i],
             "date": day_str,
             "completed": completed,
             "points": points
         })
-        
+
         total_completed += completed
         total_points += points
-    
+        total_co2 += co2
+
     return {
         "days": daily_stats,
         "totalCompleted": total_completed,
         "totalPoints": total_points,
-        "co2Saved": round(total_completed * 0.3, 2)
+        "co2Saved": round(total_co2, 2)
     }
 
 

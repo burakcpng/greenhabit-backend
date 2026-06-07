@@ -1,13 +1,15 @@
 """
 Task templates for AI-powered task generation.
-Each category contains ~100 eco-friendly tasks focused on sustainability.
+Each category contains eco-friendly tasks focused on sustainability.
 
 IMPORTANT: Points must satisfy the formula: points = min(100, ceil(co2Kg * 10))
 The server recalculates points from co2Kg on task creation, so mismatched
 values will cause a visible discrepancy in the UI (before vs after adding).
-"""
-import uuid
 
+CO₂ figures are approximate, based on published datasets (IPCC, Our World in Data,
+ADEME, WRAP, UK Energy Saving Trust). They represent the per-action saving for a
+typical household/individual and are intentionally conservative.
+"""
 import re
 
 def parse_co2_impact(impact_str: str) -> float:
@@ -57,7 +59,7 @@ TASK_POOL = {
             "co2Kg": 0.3
         },
         {
-            "title": "🚀 Use Cruise Control",
+            "title": "🚗 Use Cruise Control",
             "details": "Using cruise control on highways prevents sudden accelerations and reduces fuel consumption by 10%.",
             "points": 8,
             "estimatedImpact": "Saves ~0.8kg CO₂",
@@ -86,10 +88,10 @@ TASK_POOL = {
         },
         {
             "title": "🚆 Train over Plane",
-            "details": "Choose the train over flying for domestic travel whenever possible; it's much eco-friendlier.",
-            "points": 50,
-            "estimatedImpact": "Saves ~5.0kg CO₂",
-            "co2Kg": 5.0
+            "details": "Choose the train over flying for domestic travel whenever possible. For a 500km trip, rail produces roughly 10× fewer emissions per passenger than flying (approx. ~8kg CO₂ saved — a conservative estimate vs. the real-world ~50-80kg difference).",
+            "points": 80,
+            "estimatedImpact": "Saves ~8.0kg CO₂",
+            "co2Kg": 8.0
         },
         {
             "title": "🏠 Work from Home",
@@ -104,6 +106,20 @@ TASK_POOL = {
             "points": 5,
             "estimatedImpact": "Saves ~0.5kg CO₂",
             "co2Kg": 0.5
+        },
+        {
+            "title": "🚗 Plan a No-Drive Day",
+            "details": "Commit to using no motor vehicles today — walk, cycle, or take transit for every trip. Avoiding a typical 20km daily commute by car saves roughly 4kg CO₂ (approx. 0.2kg/km).",
+            "points": 40,
+            "estimatedImpact": "Saves ~4.0kg CO₂",
+            "co2Kg": 4.0
+        },
+        {
+            "title": "🗺️ Combine Errands in One Trip",
+            "details": "Plan all errands into a single efficient loop instead of making multiple separate trips. Consolidating ~7km of otherwise separate journeys saves fuel and time.",
+            "points": 15,
+            "estimatedImpact": "Saves ~1.5kg CO₂",
+            "co2Kg": 1.5
         }
     ],
     "Energy": [
@@ -197,6 +213,20 @@ TASK_POOL = {
             "points": 3,
             "estimatedImpact": "Saves ~0.3kg CO₂",
             "co2Kg": 0.3
+        },
+        {
+            "title": "🌡️ Program a Thermostat Schedule",
+            "details": "Set heating/cooling to match occupancy hours — lower overnight and off when you are out. Scheduling alone saves ~10–15% of heating energy, roughly 1.5kg CO₂/day for an average home (UK Energy Saving Trust estimate).",
+            "points": 15,
+            "estimatedImpact": "Saves ~1.5kg CO₂",
+            "co2Kg": 1.5
+        },
+        {
+            "title": "☀️ Switch to a Green Energy Tariff",
+            "details": "Contact your energy provider and switch to a renewable electricity tariff today. An average EU household uses ~20kWh/day; switching from a coal-heavy grid (0.25kg CO₂/kWh) to renewables avoids ~5kg CO₂ per day.",
+            "points": 50,
+            "estimatedImpact": "Saves ~5.0kg CO₂",
+            "co2Kg": 5.0
         }
     ],
     "Food": [
@@ -276,6 +306,20 @@ TASK_POOL = {
             "points": 15,
             "estimatedImpact": "Saves ~1.5kg CO₂",
             "co2Kg": 1.5
+        },
+        {
+            "title": "🌊 Choose Sustainably Sourced Seafood",
+            "details": "Buy only MSC/ASC-certified fish or shellfish today to support responsible fishing and avoid destructive practices. Choosing sustainably sourced seafood saves approximately 0.8kg CO₂ versus the equivalent protein from beef.",
+            "points": 8,
+            "estimatedImpact": "Saves ~0.8kg CO₂",
+            "co2Kg": 0.8
+        },
+        {
+            "title": "🪴 Grow Your Own Herbs",
+            "details": "Plant or tend basil, parsley, or mint at home — zero food miles, zero packaging. Growing your own eliminates the supply chain emissions of packaged herbs entirely.",
+            "points": 3,
+            "estimatedImpact": "Saves ~0.3kg CO₂",
+            "co2Kg": 0.3
         }
     ],
     "Waste": [
@@ -362,6 +406,27 @@ TASK_POOL = {
             "points": 1,
             "estimatedImpact": "Saves ~0.05kg CO₂",
             "co2Kg": 0.05
+        },
+        {
+            "title": "♻️ Do a Proper Recycling Sort",
+            "details": "Carefully sort all your household waste into the correct recycling bins today. Correctly sorted recyclables avoid landfill — approximately 1kg CO₂ per bag diverted from incineration or decomposition (WRAP UK estimate).",
+            "points": 10,
+            "estimatedImpact": "Saves ~1.0kg CO₂",
+            "co2Kg": 1.0
+        },
+        {
+            "title": "🧴 Switch to Refillable Products",
+            "details": "Use concentrate refills for dish soap, hand soap, or surface cleaner instead of buying new plastic bottles. Refillable systems avoid ~1.5kg CO₂ per bottle replaced (ADEME France data, approximate).",
+            "points": 15,
+            "estimatedImpact": "Saves ~1.5kg CO₂",
+            "co2Kg": 1.5
+        },
+        {
+            "title": "👕 Organise a Clothes Swap",
+            "details": "Host or join a local clothing swap to extend garment life without new production. Each garment that avoids manufacture saves approximately 5kg CO₂ on the marginal production footprint (WRAP lifecycle data).",
+            "points": 50,
+            "estimatedImpact": "Saves ~5.0kg CO₂",
+            "co2Kg": 5.0
         }
     ],
     "Water": [
@@ -420,6 +485,27 @@ TASK_POOL = {
             "points": 2,
             "estimatedImpact": "Saves ~0.2kg CO₂",
             "co2Kg": 0.2
+        },
+        {
+            "title": "🔍 Check Home for Water Leaks",
+            "details": "Inspect all taps, pipes, and the toilet cistern for drips — fixing a single dripping tap can save over 200 litres per day, reducing water heating energy by approximately 0.5kg CO₂.",
+            "points": 5,
+            "estimatedImpact": "Saves ~0.5kg CO₂",
+            "co2Kg": 0.5
+        },
+        {
+            "title": "🚿 Take a 2-Minute Navy Shower",
+            "details": "Wet yourself, turn the water off, soap up, then turn it back on to rinse. Under 2 minutes total. A standard shower uses ~60L; a navy shower uses ~8L — the energy saved from heating that water saves roughly 0.6kg CO₂.",
+            "points": 6,
+            "estimatedImpact": "Saves ~0.6kg CO₂",
+            "co2Kg": 0.6
+        },
+        {
+            "title": "💧 Reuse Pasta or Vegetable Water",
+            "details": "Let cooking water cool and use it to water your plants instead of pouring it down the drain. Nutrient-rich and free — zero extra tap use.",
+            "points": 2,
+            "estimatedImpact": "Saves ~0.2kg CO₂",
+            "co2Kg": 0.2
         }
     ],
     "Digital": [
@@ -452,41 +538,90 @@ TASK_POOL = {
             "co2Kg": 0.1
         },
         {
-            "title": "🔍 Navigate Directly",
-            "details": "Type the URL directly into the address bar instead of searching for sites you visit often.",
+            "title": "📵 Screen-Free Evening",
+            "details": "Turn off all screens — TV, phone, and laptop — for at least 3 hours tonight. Beyond the direct energy saving, this reduces streaming data centre load and is good for your sleep.",
+            "points": 3,
+            "estimatedImpact": "Saves ~0.3kg CO₂",
+            "co2Kg": 0.3
+        },
+        {
+            "title": "🔆 Enable Auto-Brightness on All Devices",
+            "details": "Let your phone and tablet automatically dim in low-light conditions. The screen accounts for ~30% of phone power consumption; auto-brightness saves an estimated 15–20% of that.",
             "points": 1,
-            "estimatedImpact": "Saves ~0.02kg CO₂",
-            "co2Kg": 0.02
+            "estimatedImpact": "Saves ~0.1kg CO₂",
+            "co2Kg": 0.1
+        },
+        {
+            "title": "📦 Consolidate Online Deliveries",
+            "details": "Delay non-urgent purchases so they ship together in a single parcel rather than separate deliveries. Last-mile delivery accounts for ~0.5–1.0kg CO₂ per parcel; consolidation saves roughly 0.8kg on average (McKinsey logistics data, approximate).",
+            "points": 8,
+            "estimatedImpact": "Saves ~0.8kg CO₂",
+            "co2Kg": 0.8
+        },
+        {
+            "title": "📺 Disable Video Autoplay",
+            "details": "Turn off video autoplay on social media and streaming platforms. Autoplay drives an estimated 10–15% of unnecessary video streaming, which contributes to data centre energy consumption and CO₂ emissions.",
+            "points": 3,
+            "estimatedImpact": "Saves ~0.3kg CO₂",
+            "co2Kg": 0.3
         }
     ],
     "Social": [
         {
             "title": "🌳 Join Tree Planting Event",
-            "details": "Physically participate in planting saplings or make a donation.",
+            "details": "Physically participate in planting saplings or make a donation to a verified reforestation project. A single tree sequesters roughly 10kg CO₂ per year at maturity — the figure shown is a conservative lifetime-sequestration estimate for your contribution.",
             "points": 100,
             "estimatedImpact": "Saves ~10.0kg CO₂",
             "co2Kg": 10.0
         },
         {
             "title": "🎥 Watch Sustainability Doc",
-            "details": "Watch an environmental documentary to raise your awareness.",
-            "points": 5,
-            "estimatedImpact": "Saves ~0.5kg CO₂",
-            "co2Kg": 0.5
+            "details": "Watch an environmental documentary to raise your awareness. The CO₂ value reflects a small indirect benefit from raising climate literacy — not a direct emission saving.",
+            "points": 2,
+            "estimatedImpact": "Saves ~0.2kg CO₂",
+            "co2Kg": 0.2
         },
         {
             "title": "🗣️ Educate a Friend",
-            "details": "Share this app or an eco-tip with a friend.",
-            "points": 5,
-            "estimatedImpact": "Saves ~0.5kg CO₂",
-            "co2Kg": 0.5
+            "details": "Share this app or an evidence-based eco-tip with a friend. The CO₂ value is an approximate indirect benefit from spreading climate awareness — the real multiplier effect is hard to quantify.",
+            "points": 2,
+            "estimatedImpact": "Saves ~0.2kg CO₂",
+            "co2Kg": 0.2
         },
         {
             "title": "📚 Read an Eco-Book",
-            "details": "Read an article or book about climate change or nature.",
-            "points": 3,
-            "estimatedImpact": "Saves ~0.3kg CO₂",
-            "co2Kg": 0.3
+            "details": "Read an article or book about climate change or nature. The CO₂ value is a symbolic indirect benefit — the real value is the knowledge and motivation gained.",
+            "points": 1,
+            "estimatedImpact": "Saves ~0.1kg CO₂",
+            "co2Kg": 0.1
+        },
+        {
+            "title": "🌱 Join a Community Clean-Up",
+            "details": "Participate in a local park, beach, or street clean-up event today. Diverting ~10 bags of litter from incineration or landfill avoids roughly 2kg CO₂ (approx. 0.2kg CO₂ per bag, WRAP UK).",
+            "points": 20,
+            "estimatedImpact": "Saves ~2.0kg CO₂",
+            "co2Kg": 2.0
+        },
+        {
+            "title": "🗳️ Contact Your Local Representative",
+            "details": "Write or call your MP, mayor, or councillor about a local environmental policy issue. This is an indirect action whose real value is in driving systemic change — the CO₂ figure is a minimal placeholder.",
+            "points": 1,
+            "estimatedImpact": "Saves ~0.1kg CO₂",
+            "co2Kg": 0.1
+        },
+        {
+            "title": "💚 Support an Environmental Cause",
+            "details": "Donate to or volunteer with a verified environmental NGO today. The CO₂ value is an approximate indirect benefit reflecting the leverage that well-run environmental organisations have on emissions at scale.",
+            "points": 10,
+            "estimatedImpact": "Saves ~1.0kg CO₂",
+            "co2Kg": 1.0
+        },
+        {
+            "title": "📣 Share an Eco-Tip Publicly",
+            "details": "Post an evidence-based sustainability tip on social media or in a community group. A small indirect benefit — the CO₂ figure is intentionally low to remain honest about direct vs. facilitated savings.",
+            "points": 1,
+            "estimatedImpact": "Saves ~0.1kg CO₂",
+            "co2Kg": 0.1
         }
     ]
 }

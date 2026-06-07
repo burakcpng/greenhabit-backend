@@ -135,43 +135,56 @@ def get_sent_shares(db, user_id: str) -> List[Dict]:
     return result
 
 
-def accept_share(db, share_id: str, user_id: str) -> Dict:
-    """Accept a task share and create the task for the recipient"""
-    
+def accept_share(db, share_id: str, user_id: str, local_date: str = None) -> Dict:
+    """Accept a task share and create the task for the recipient.
+
+    local_date: the recipient's local date (YYYY-MM-DD) sent by the iOS client.
+    Falls back to UTC date when not supplied (legacy callers).
+    """
+    import uuid as _uuid
+
     try:
         share = db.task_shares.find_one({"_id": ObjectId(share_id)})
-    except:
+    except Exception:
         return {"success": False, "message": "Invalid share ID"}
-    
+
     if not share:
         return {"success": False, "message": "Share not found"}
-    
+
     if share["recipientId"] != user_id:
         return {"success": False, "message": "Not authorized"}
-    
+
     if share["status"] != "pending":
         return {"success": False, "message": f"Share already {share['status']}"}
-    
-    # Create task for recipient
-    today = datetime.utcnow().strftime("%Y-%m-%d")
-    
+
+    # Use the recipient's local date when provided; fall back to UTC.
+    task_date = local_date if local_date else datetime.utcnow().strftime("%Y-%m-%d")
+
+    # Assign a proper UUID id field so GET /tasks finds/patches this task
+    # consistently (tasks normally get a UUID; accepted shares previously only
+    # had MongoDB's _id, which caused look-up failures in PATCH /tasks/{id}).
+    task_id = str(_uuid.uuid4())
+
     task_doc = {
+        "id": task_id,
         "userId": user_id,
         "title": share["taskTitle"],
         "details": share["taskDetails"],
         "category": share["taskCategory"],
-        "date": today,
+        "date": task_date,
         "points": share["taskPoints"],
-        "estimatedImpact": share.get("taskEstimatedImpact"),
+        "estimatedImpact": share.get("taskEstimatedImpact") or "",
+        "co2Kg": share.get("taskPoints", 10) / 10.0,  # reverse-compute from points
         "isCompleted": False,
-        "createdAt": datetime.utcnow(),
-        "updatedAt": datetime.utcnow(),
+        "creatorType": "user",
         "sharedBy": share["senderId"],
-        "evidenceImageData": share.get("taskPhotoData")   # base64 JPEG from sender
+        "evidenceImageData": share.get("taskPhotoData"),
+        "createdAt": datetime.utcnow(),
+        "updatedAt": datetime.utcnow()
     }
-    
+
     task_result = db.tasks.insert_one(task_doc)
-    
+
     # Update share status
     db.task_shares.update_one(
         {"_id": ObjectId(share_id)},
@@ -179,15 +192,16 @@ def accept_share(db, share_id: str, user_id: str) -> Dict:
             "$set": {
                 "status": "accepted",
                 "updatedAt": datetime.utcnow(),
-                "acceptedTaskId": str(task_result.inserted_id)
+                "acceptedTaskId": task_id
             }
         }
     )
-    
+
     return {
         "success": True,
         "message": "Task accepted and added to your list",
-        "taskId": str(task_result.inserted_id)
+        "taskId": task_id,
+        "shareId": share_id
     }
 
 

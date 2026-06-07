@@ -1,15 +1,16 @@
 """
-Comprehensive learning content for the GreenHabit app.
-Includes ~30 deep-dive articles on sustainability, ecology, and scientific facts.
+Learning content for the GreenHabit app.
+32 deep-dive articles on sustainability, ecology, and scientific facts.
 All content is professionally written in English for a global audience.
-"""
 
-import uuid
+IDs are stable slug-based strings so they survive server restarts and
+can be safely bookmarked or deep-linked by clients.
+"""
 
 LEARNING_ARTICLES = [
     # --- WATER & OCEANS ---
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-virtual-water",
         "title": "Virtual Water: The Invisible Consumption",
         "details": """The water running from your tap is just the tip of the iceberg. 'Virtual Water' is the total amount of water used to produce a product.
 
@@ -19,7 +20,7 @@ LEARNING_ARTICLES = [
         "category": "Water"
     },
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-ocean-acidification",
         "title": "What is Ocean Acidification?",
         "details": """Oceans absorb about 30% of the carbon dioxide (CO2) in the atmosphere. While this helps regulate the climate, excess CO2 changes the chemistry of seawater, making it more acidic.
 
@@ -28,7 +29,7 @@ LEARNING_ARTICLES = [
         "category": "Water"
     },
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-microplastics",
         "title": "Microplastics: Plastic on Our Plates",
         "details": """Microplastics are plastic particles smaller than 5mm. Plastics in the ocean eventually break down into these tiny pieces, are eaten by fish, and enter our food chain.
 
@@ -37,7 +38,7 @@ LEARNING_ARTICLES = [
         "category": "Water"
     },
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-rainwater-harvesting",
         "title": "The Science of Rainwater Harvesting",
         "details": """Rainwater is often healthier for plants than tap water because it is free of chlorine and fluoride, and has an ideal pH level.
 
@@ -48,7 +49,7 @@ LEARNING_ARTICLES = [
 
     # --- ENERGY & CLIMATE ---
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-vampire-energy",
         "title": "Vampire Energy (Standby Power)",
         "details": """Appliances continue to consume electricity even when turned off if they remain plugged in. This is called 'Vampire Energy' or 'Phantom Load'.
 
@@ -58,7 +59,7 @@ LEARNING_ARTICLES = [
         "category": "Energy"
     },
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-led-technology",
         "title": "The Miracle of LED Technology",
         "details": """Old incandescent bulbs converted 90% of energy into heat, not light. LEDs work on the opposite principle.
 
@@ -68,7 +69,7 @@ LEARNING_ARTICLES = [
         "category": "Energy"
     },
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-methane-vs-co2",
         "title": "The Greenhouse Effect: Methane vs. CO2",
         "details": """Greenhouse gases blanket the Earth, trapping solar heat. However, since the industrial revolution, this blanket has become too thick.
 
@@ -76,19 +77,10 @@ LEARNING_ARTICLES = [
 - **Sources:** Major methane sources include livestock agriculture, rice paddies, and decomposing waste in landfills.""",
         "category": "Energy"
     },
-    {
-        "id": str(uuid.uuid4()),
-        "title": "The Carbon Cost of Data Centers",
-        "details": """The internet doesn't live in a fluffy 'cloud'; it lives in massive physical data centers. Every email, video stream, and AI query consumes energy.
-
-- **Fact:** Data centers account for about 1-2% of global electricity consumption.
-- **Digital Hygiene:** Deleting unnecessary emails and emptying your spam folder reduces server load and the energy needed for cooling and storage.""",
-        "category": "Energy"
-    },
 
     # --- FOOD & AGRICULTURE ---
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-food-waste",
         "title": "If Food Waste Were a Country...",
         "details": """If food waste were a country, it would be the **third-largest** emitter of greenhouse gases in the world, after China and the USA.
 
@@ -97,7 +89,7 @@ LEARNING_ARTICLES = [
         "category": "Food"
     },
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-meat-resource-intensity",
         "title": "The Resource Intensity of Meat",
         "details": """Animal agriculture consumes a disproportionate amount of resources compared to plant-based agriculture.
 
@@ -107,7 +99,7 @@ LEARNING_ARTICLES = [
         "category": "Food"
     },
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-food-miles",
         "title": "Understanding Food Miles",
         "details": """'Food Miles' measure the distance food travels from farm to fork.
 
@@ -116,7 +108,7 @@ LEARNING_ARTICLES = [
         "category": "Food"
     },
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-soil-health",
         "title": "Soil Health as a Carbon Sink",
         "details": """Healthy soil is one of the world's largest carbon reservoirs.
 
@@ -127,7 +119,7 @@ LEARNING_ARTICLES = [
 
     # --- WASTE & CIRCULAR ECONOMY ---
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-plastic-half-life",
         "title": "The Half-Life of Plastic",
         "details": """Plastic does not biodegrade; it only photodegrades into smaller pieces (microplastics).
 
@@ -139,7 +131,7 @@ LEARNING_ARTICLES = [
         "category": "Waste"
     },
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-circular-economy",
         "title": "What is the Circular Economy?",
         "details": """Our current system is 'Take-Make-Waste' (Linear). A circular economy mimics nature; there is no waste, only feedstock for the next cycle.
 
@@ -150,7 +142,7 @@ LEARNING_ARTICLES = [
         "category": "Waste"
     },
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-ewaste-urban-mine",
         "title": "The Urban Mine: E-Waste",
         "details": """Old phones and laptops aren't trash; they are high-grade metal ores.
 
@@ -159,7 +151,7 @@ LEARNING_ARTICLES = [
         "category": "Waste"
     },
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-fast-fashion",
         "title": "The Truth About Fast Fashion",
         "details": """The fashion industry generates more carbon emissions than all international flights and maritime shipping combined.
 
@@ -169,7 +161,7 @@ LEARNING_ARTICLES = [
         "category": "Waste"
     },
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-composting",
         "title": "The Chemistry of Composting",
         "details": """Composting is the aerobic decomposition of organic matter by microorganisms.
 
@@ -181,7 +173,7 @@ LEARNING_ARTICLES = [
 
     # --- TRANSPORT & CITIES ---
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-ev-carbon-debt",
         "title": "EVs and the Carbon Debt",
         "details": """Electric Vehicles (EVs) have zero tailpipe emissions, but manufacturing their batteries is carbon-intensive.
 
@@ -190,7 +182,7 @@ LEARNING_ARTICLES = [
         "category": "Transport"
     },
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-bicycle-efficiency",
         "title": "The Efficiency of the Bicycle",
         "details": """The bicycle is the most efficient machine ever created for converting human energy into motion.
 
@@ -198,66 +190,86 @@ LEARNING_ARTICLES = [
 - **Space:** You can park 10-12 bicycles in a single car parking space. Micromobility is the key to solving urban congestion.""",
         "category": "Transport"
     },
+
+    # --- DIGITAL ---
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-carbon-cost-data-centers",
+        "title": "The Carbon Cost of Data Centers",
+        "details": """The internet doesn't live in a fluffy 'cloud'; it lives in massive physical data centers. Every email, video stream, and AI query consumes energy.
+
+- **Fact:** Data centers account for about 1-2% of global electricity consumption.
+- **Digital Hygiene:** Deleting unnecessary emails and emptying your spam folder reduces server load and the energy needed for cooling and storage.""",
+        "category": "Digital"
+    },
+    {
+        "id": "learn-digital-carbon-footprint",
+        "title": "Your Digital Carbon Footprint",
+        "details": """Every swipe, stream, and scroll has a carbon cost. Your devices, the networks that carry data, and the data centres that store it all consume electricity.
+
+- **Streaming:** Watching one hour of HD video online emits roughly **36 grams of CO2** — not huge, but a 2-hour daily habit adds up to ~26kg/year.
+- **Device Upgrades:** Manufacturing a new smartphone produces about **70kg of CO2**. Keeping your phone for an extra year is one of the highest-impact digital choices you can make.
+- **AI Queries:** A single ChatGPT query uses roughly 10x the energy of a standard Google search. Thoughtful use of AI tools matters.
+- **Quick Wins:** Enable auto-brightness, disable autoplay, and compress large attachments before sending.""",
+        "category": "Digital"
+    },
+
+    # --- SOCIAL, NATURE & SYSTEMS ---
+    {
+        "id": "learn-urban-heat-island",
         "title": "The Urban Heat Island Effect",
         "details": """City centers are often 1-3°C hotter than surrounding rural areas. This is the 'Urban Heat Island' effect.
 
 - **Causes:** Concrete and asphalt absorb and retain heat. Lack of greenery reduces cooling via evaporation.
 - **Solution:** Green roofs, lighter-colored pavements, and urban trees can significantly cool cities and reduce air conditioning needs.""",
-        "category": "Transport"
+        "category": "Social"
     },
-
-    # --- BIODIVERSITY & NATURE ---
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-why-bees-matter",
         "title": "Why Bees Matter",
         "details": """Bees don't just make honey; they are the guarantors of global food security.
 
 - **Pollination:** 1 in every 3 bites of food we eat (fruits, vegetables, nuts) depends on pollinators.
 - **Threat:** Pesticides and habitat loss are driving bee populations down. Planting bee-friendly flowers (like lavender or thyme) can help restore local populations.""",
-        "category": "General"
+        "category": "Social"
     },
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-trees-cool-planet",
         "title": "How Trees Cool the Planet",
         "details": """Trees are nature's air conditioners.
 
 - **Shade:** They block direct sunlight, keeping surfaces cool.
 - **Transpiration:** Trees release water vapor through their leaves, which cools the surrounding air.
 - **Impact:** A strategically planted tree can reduce a home's air conditioning needs by up to 30%.""",
-        "category": "General"
+        "category": "Social"
     },
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-deforestation-amazon",
         "title": "Deforestation and the Amazon",
         "details": """The Amazon rainforest is often called the 'Lungs of the Earth', but it's more accurately the 'Earth's Air Conditioner'.
 
 - **Carbon Storage:** Trees absorb carbon as they grow. When cut or burned, that stored carbon is released back into the atmosphere.
 - **Rain:** The Amazon generates its own rainfall. Deforestation can disrupt this cycle, turning the rainforest into a savannah.""",
-        "category": "General"
+        "category": "Social"
     },
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-biodiversity",
         "title": "The Importance of Biodiversity",
         "details": """Biodiversity is the variety of life in an ecosystem. The more diverse an ecosystem, the more resilient it is to disease and climate change.
 
 - **Example:** A forest with only one type of tree (monoculture) can be wiped out by a single pest, whereas a diverse forest survives.
 - **Human Benefit:** Over 50% of modern medicines are derived from nature and plants.""",
-        "category": "General"
-    },
-
-    # --- SOCIAL & PSYCHOLOGY ---
-    {
-        "id": str(uuid.uuid4()),
-        "title": "Dealing with Eco-Anxiety",
-        "details": """Eco-anxiety is the chronic fear of environmental doom.
-
-- **Coping:** The best antidote to anxiety is action. reducing your individual footprint, joining local community groups, and focusing on controllable variables builds psychological resilience.""",
         "category": "Social"
     },
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-eco-anxiety",
+        "title": "Dealing with Eco-Anxiety",
+        "details": """Eco-anxiety is the chronic fear of environmental doom.
+
+- **Coping:** The best antidote to anxiety is action. Reducing your individual footprint, joining local community groups, and focusing on controllable variables builds psychological resilience.""",
+        "category": "Social"
+    },
+    {
+        "id": "learn-greenwashing",
         "title": "Spotting Greenwashing",
         "details": """Greenwashing is a marketing strategy where companies deceptively claim their products are eco-friendly.
 
@@ -266,7 +278,7 @@ LEARNING_ARTICLES = [
         "category": "Social"
     },
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-minimalism",
         "title": "Minimalism as Sustainability",
         "details": """Minimalism isn't just about owning less; it's about intentional consumption.
 
@@ -275,7 +287,7 @@ LEARNING_ARTICLES = [
         "category": "Social"
     },
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-fair-trade",
         "title": "Why Fair Trade Matters",
         "details": """Sustainability is about people as well as the planet.
 
@@ -284,7 +296,7 @@ LEARNING_ARTICLES = [
         "category": "Social"
     },
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-sharing-economy",
         "title": "The Sharing Economy",
         "details": """An economic model defined by access to goods rather than ownership.
 
@@ -293,12 +305,22 @@ LEARNING_ARTICLES = [
         "category": "Social"
     },
     {
-        "id": str(uuid.uuid4()),
+        "id": "learn-individual-action",
         "title": "The Power of Individual Action",
         "details": """'What can I do alone?' is a common fallacy.
 
 - **Social Proof:** Your actions influence your social circle. If you install solar panels, your neighbors are more likely to do the same.
 - **Market Signals:** As consumer demand shifts (e.g., for organic food or EVs), massive corporations are forced to change their production models.""",
+        "category": "Social"
+    },
+    {
+        "id": "learn-rewilding",
+        "title": "The Power of Rewilding",
+        "details": """Rewilding is the large-scale restoration of ecosystems by reintroducing lost species and letting nature reclaim degraded land.
+
+- **The Wolf Effect:** When wolves were reintroduced to Yellowstone National Park in 1995, they changed the behavior of deer, which allowed riverbanks to revegetate — stabilizing rivers and restoring habitats for beavers, otters, and songbirds. This is called a 'trophic cascade'.
+- **Carbon:** Restored peatlands and wetlands can sequester significant amounts of carbon. The UK's peatlands alone store more carbon than all of France's forests.
+- **What You Can Do:** Support rewilding charities, plant native species in your garden, and leave a corner of it wild.""",
         "category": "Social"
     }
 ]

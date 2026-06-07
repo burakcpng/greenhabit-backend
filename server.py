@@ -2069,18 +2069,23 @@ def get_pending(user_id: str = Depends(get_current_user)):
 @api.patch("/shares/{share_id}/accept")
 def accept_share_endpoint(
     share_id: str,
+    localDate: Optional[str] = Query(None, description="Recipient's local date (YYYY-MM-DD)"),
     user_id: str = Depends(get_current_user)
 ):
-    """Accept a shared task"""
+    """Accept a shared task.
+
+    localDate: the recipient's local calendar date so the created task appears
+    on the correct day in their Tasks list regardless of timezone.
+    """
     try:
         db = get_db()
         from task_sharing import accept_share
-        
-        result = accept_share(db, share_id, user_id)
-        
+
+        result = accept_share(db, share_id, user_id, local_date=localDate)
+
         if not result["success"]:
             raise HTTPException(status_code=400, detail=result["message"])
-        
+
         return result
     except HTTPException:
         raise
