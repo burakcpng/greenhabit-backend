@@ -10,6 +10,7 @@ import random
 import bcrypt
 from pymongo import MongoClient, DESCENDING
 from bson import ObjectId
+from db import get_db, sanitize_doc, sanitize_docs
 
 # Import external data files
 from task_templates import TASK_POOL, parse_co2_impact
@@ -43,64 +44,7 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-User-Id"],
 )
 
-# ======================== GLOBAL DATABASE CLIENT ========================
-
-# ✅ FIX 3: Connection Pooling - Global MongoDB Client
-_mongo_client = None
-_db = None
-
-def get_db():
-    """
-    Get database connection with connection pooling
-    Creates client only once and reuses it
-    """
-    global _mongo_client, _db
-    
-    if _mongo_client is None:
-        mongo_url = os.getenv("MONGO_URL")
-        db_name = os.getenv("DB_NAME", "GreenHabit_db")
-        
-        if not mongo_url:
-            raise HTTPException(status_code=500, detail="Database configuration missing")
-        
-        try:
-            _mongo_client = MongoClient(
-                mongo_url,
-                serverSelectionTimeoutMS=3000,
-                connectTimeoutMS=3000,
-                maxPoolSize=10,
-                retryWrites=True
-            )
-            _mongo_client.admin.command('ping')
-            _db = _mongo_client[db_name]
-            print("✅ MongoDB connection established")
-        except Exception as e:
-            raise HTTPException(status_code=503, detail=f"Database unavailable: {str(e)}")
-    
-    return _db
-
-def sanitize_doc(doc):
-    """
-    Convert MongoDB _id to string id
-    ✅ FIX 1: Standardize date formats to ISO8601 without microseconds
-    """
-    if doc and "_id" in doc:
-        if "id" not in doc:
-            doc["id"] = str(doc["_id"])
-        del doc["_id"]
-    
-    # ✅ FIX 1: Convert datetime fields to ISO8601 string (YYYY-MM-DDTHH:MM:SS)
-    date_fields = ["createdAt", "updatedAt", "completedAt"]
-    for field in date_fields:
-        if field in doc and doc[field] is not None:
-            if isinstance(doc[field], datetime):
-                # Remove microseconds and convert to ISO format
-                doc[field] = doc[field].replace(microsecond=0).isoformat() + "Z"
-    
-    return doc
-
-def sanitize_docs(docs):
-    return [sanitize_doc(doc) for doc in docs]
+# get_db, sanitize_doc, sanitize_docs are imported from db.py
 
 def get_user_id(x_user_id: Optional[str] = Header(None)) -> str:
     """
@@ -1073,15 +1017,24 @@ def startup_event():
         # ✅ APNs: Validate push notification configuration
         from notification_system import validate_apns_config
         validate_apns_config()
+
+        # Seed emission factors only when both collections are empty
+        if db.ef_transport.count_documents({}) == 0 and db.ef_spend.count_documents({}) == 0:
+            try:
+                from seed_factors import seed as seed_emission_factors
+                from db import _mongo_client as _ef_client
+                seed_emission_factors(client=_ef_client)
+            except Exception as seed_err:
+                print(f"⚠️ Emission factor seed failed (non-blocking): {seed_err}")
     except Exception as e:
         print(f"❌ Database connection failed: {e}")
 
 @app.on_event("shutdown")
 def shutdown_event():
     """Cleanup resources on shutdown"""
-    global _mongo_client
-    if _mongo_client:
-        _mongo_client.close()
+    import db as _db_module
+    if _db_module._mongo_client:
+        _db_module._mongo_client.close()
         print("👋 MongoDB connection closed")
     print("👋 GreenHabit API shutting down...")
 
@@ -2984,6 +2937,9 @@ def get_ban_status(user_id: str = Depends(get_current_user)):
 
 
 app.include_router(api)
+
+from calc_router import calc_router
+app.include_router(calc_router)
 
 
 
