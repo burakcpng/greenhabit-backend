@@ -191,6 +191,94 @@ def login_with_apple(payload: LoginPayload):
         print(f"❌ Login failed: {e}")
         raise HTTPException(status_code=500, detail=f"Login processing failed: {str(e)}")
 
+# ======================== GOOGLE LOGIN (ANDROID) ========================
+
+class GoogleLoginPayload(BaseModel):
+    googleToken: str
+    fullName: Optional[str] = None  # Android may pass account.displayName
+
+@api.post("/auth/google-login")
+def login_with_google(payload: GoogleLoginPayload):
+    """
+    Android Google Sign-In. Separate from /auth/login so the Apple flow is
+    untouched. Verifies the Google ID token, links by email to any existing
+    account, otherwise creates a new user. Returns the same session response
+    shape as the Apple/email flows.
+    """
+    try:
+        db = get_db()
+        current_time = datetime.utcnow()
+
+        # 1. Verify the Google ID token (audience = GOOGLE_CLIENT_ID_WEB)
+        gid = AuthSystem.verify_google_token(payload.googleToken)
+        google_user_id = gid["sub"]
+        email = gid["email"]
+        display_name = payload.fullName or gid["name"] or "Eco Warrior"
+
+        # 2. Already linked by googleUserId?
+        user = db.users.find_one({"googleUserId": google_user_id})
+
+        # 3. Else link to an existing account by email (Apple/email/any)
+        if not user and email:
+            existing = db.users.find_one({"email": email})
+            if existing:
+                db.users.update_one(
+                    {"userId": existing["userId"]},
+                    {"$set": {"googleUserId": google_user_id, "lastLogin": current_time}}
+                )
+                user = existing
+
+        is_new_user = user is None
+
+        if is_new_user:
+            # 4. Brand-new user (mirrors the email-register document shape)
+            user_id = str(uuid.uuid4())
+            db.users.insert_one({
+                "userId": user_id,
+                "appleUserId": None,
+                "googleUserId": google_user_id,
+                "email": email,
+                "displayName": display_name,
+                "auth_type": "google",
+                "createdAt": current_time,
+                "lastLogin": current_time,
+                "isVerified": True
+            })
+            db.user_profiles.update_one(
+                {"userId": user_id},
+                {"$setOnInsert": {
+                    "userId": user_id,
+                    "displayName": display_name,
+                    "bio": "",
+                    "totalPoints": 0,
+                    "createdAt": current_time
+                }},
+                upsert=True
+            )
+            print(f"✅ Created new Google user: {user_id}")
+        else:
+            user_id = user["userId"]
+            db.users.update_one(
+                {"userId": user_id},
+                {"$set": {"lastLogin": current_time}}
+            )
+            print(f"👋 Google login: {user_id}")
+
+        # 5. Issue session token (same shape as Apple/email login)
+        session_token = AuthSystem.create_session_token(user_id)
+        return {
+            "success": True,
+            "token": session_token,
+            "userId": user_id,
+            "isNewUser": is_new_user
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Google login failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Login processing failed: {str(e)}")
+
 # ======================== DEV LOGIN (SIMULATOR ONLY) ========================
 
 class DevLoginPayload(BaseModel):

@@ -24,6 +24,10 @@ APPLE_ISSUER = "https://appleid.apple.com"
 # Your App Bundle ID (MUST match your iOS app's Bundle Identifier exactly)
 APPLE_CLIENT_ID = os.getenv("APPLE_CLIENT_ID", "com.burakcpng.GreenHabit")
 
+# Google Sign-In (Android). The audience of the ID token is the OAuth *Web*
+# client ID (google-services.json oauth_client where client_type == 3).
+GOOGLE_CLIENT_ID_WEB = os.getenv("GOOGLE_CLIENT_ID_WEB")
+
 # Apple Token Revocation (Guideline 5.1.1)
 APPLE_TEAM_ID = os.getenv("APPLE_TEAM_ID")
 APPLE_KEY_ID = os.getenv("APPLE_KEY_ID")
@@ -126,6 +130,39 @@ class AuthSystem:
             raise HTTPException(status_code=401, detail=f"Invalid authentication token: {str(e)}")
         except Exception as e:
             print(f"❌ Apple Auth Error: {str(e)}")
+            raise HTTPException(status_code=401, detail="Authentication failed")
+
+    @classmethod
+    def verify_google_token(cls, token: str) -> dict:
+        """
+        Verify a Google ID token (from the Android Google Sign-In flow) and
+        return {"sub", "email", "name"}.
+
+        verify_oauth2_token validates the signature, expiry, issuer and that the
+        audience matches GOOGLE_CLIENT_ID_WEB (the OAuth Web client ID).
+        """
+        if not GOOGLE_CLIENT_ID_WEB:
+            raise HTTPException(status_code=500, detail="Google auth is not configured")
+        try:
+            from google.oauth2 import id_token as google_id_token
+            from google.auth.transport import requests as google_requests
+
+            info = google_id_token.verify_oauth2_token(
+                token, google_requests.Request(), GOOGLE_CLIENT_ID_WEB
+            )
+            return {
+                "sub": info["sub"],
+                "email": (info.get("email") or "").lower().strip() or None,
+                "name": info.get("name"),
+            }
+        except HTTPException:
+            raise
+        except ValueError as e:
+            # Invalid signature / wrong audience / expired token
+            print(f"⚠️ Invalid Google Token: {str(e)}")
+            raise HTTPException(status_code=401, detail="Invalid Google authentication token")
+        except Exception as e:
+            print(f"❌ Google Auth Error: {str(e)}")
             raise HTTPException(status_code=401, detail="Authentication failed")
 
     @staticmethod

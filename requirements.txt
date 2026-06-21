@@ -16,6 +16,8 @@ python-dotenv>=1.0.1
 
 # ======================== UTILITIES ========================
 requests>=2.31.0
+# Google Sign-In (Android): verifies Google ID tokens at /auth/google-login
+google-auth>=2.28.0
 certifi>=2024.0.0
 tzdata>=2024.2
 pytz>=2024.1
