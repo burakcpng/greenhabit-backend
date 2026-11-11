@@ -92,7 +92,10 @@ class ProfanityFilter:
         "amk", "aq", "siktir", "pic", "piç", "yarak", "yarrak", "orospu", "oç", "oc",
         "sik", "sokuk", "kahpe", "kaltak", "gavat", "ibne", "göt", "sikik", "yavşak",
         "amina", "amına" , "amcik" , "bacısiken" , "kaşar" , "gevende" , "döl" , "zenci" ,
-        "penci" ,"zorno" , "bacını" , "ananı" , "anne" , "babanne" , "sakso" , "taşak" ,
+        # "anne" (mother) and "babanne" (grandmother) were removed on purpose:
+        # they are ordinary words and refused titles such as "Anne ile
+        # alışverişe git". The insults built on them ("ananı", "bacını") stay.
+        "penci" ,"zorno" , "bacını" , "ananı" , "sakso" , "taşak" ,
         "taşşak" , "sıç" , "sıçmak" ,
 
         # Common inflected forms (whole words only: list the forms themselves)

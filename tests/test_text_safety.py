@@ -136,13 +136,10 @@ CANONICAL_CORPUS_PATH = os.path.join(os.path.dirname(BACKEND_ROOT), "shared", "c
 with open(CORPUS_PATH, encoding="utf-8") as corpus_file:
     CORPUS = json.load(corpus_file)
 
-# Ordinary titles the backend still refuses, because the word itself is on its
-# list. Removing an entry is a product decision (it would weaken the check),
-# so these stay refused until it is made. The iOS filter accepts them.
+# Ordinary titles the backend refuses on purpose, because the word itself is
+# on its list (decided 2026-11-11: keep "kaşar"). The iOS filter accepts them.
 PENDING_DECISION = {
     "Kaşar peyniri yerine sebze ye": "kaşar",     # a cheese; also a slur
-    "Anne ile alışverişe git": "anne",              # "mother"
-    "Babanne için kek yap": "babanne",              # "grandmother"
 }
 
 
@@ -179,6 +176,14 @@ def test_corpus_copy_matches_the_canonical_file():
                                   "Vitamin D a day", "Read Dickens for an hour"])
 def test_folding_and_joining_do_not_create_false_positives(text):
     assert ProfanityFilter.is_safe(text)
+
+
+@pytest.mark.parametrize("word", ["anne", "babanne"])
+def test_mother_and_grandmother_are_ordinary_words(word):
+    """Removed from the list on purpose (2026-11-11); the insults stay."""
+    assert word not in ProfanityFilter.BANNED_WORDS
+    assert ProfanityFilter.is_safe(f"{word.capitalize()} ile yürüyüşe çık")
+    assert not ProfanityFilter.is_safe("ananı")
 
 
 @pytest.mark.parametrize("text", ["fück", "fu\u0441k", "f u c k", "f.u.c.k", "f_u_c_k", "fu ck", "s h i t", "nude"])
