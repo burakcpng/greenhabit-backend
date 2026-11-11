@@ -72,6 +72,7 @@ class CreateTaskPayload(BaseModel):
     creatorType: Optional[str] = "user"  # ✅ Creator Attribution: "system" or "user"
     sharedBy: Optional[str] = None  # ✅ Original creator userId (for profile-added tasks)
     time: Optional[str] = None  # v1.5: optional "HH:mm" (floating wall-clock)
+    reminderOffsets: Optional[List[int]] = None  # v1.5: minutes before `time`, max 2, needs a time
 
 
 class UpdateTaskPayload(BaseModel):
@@ -86,6 +87,9 @@ class UpdateTaskPayload(BaseModel):
     # stored one is a no-op, so clients that echo the current date are safe.
     date: Optional[str] = None                 # "YYYY-MM-DD"
     time: Optional[str] = None                 # "HH:mm"; explicit null clears the time
+    # v1.5 reminders: minutes before `time`, max 2. Absent/null = unchanged,
+    # [] = none. Clearing the time clears them too.
+    reminderOffsets: Optional[List[int]] = None
 
 # ✅ Streak v2: Batch offline completion sync payload
 class CompletionSyncPayload(BaseModel):
@@ -604,11 +608,13 @@ def create_task(
                        f"Allowed: {sorted(_ALLOWED_TASK_CATEGORIES)}"
             )
 
-        # v1.5: optional time of day
-        if payload.time is not None:
-            from habit_system import validate_time, HabitError
+        # v1.5: optional time of day and reminders (same rules as habits)
+        reminder_offsets = []
+        if payload.time is not None or payload.reminderOffsets:
+            from habit_system import validate_time, normalize_reminder_offsets, HabitError
             try:
                 validate_time(payload.time)
+                reminder_offsets = normalize_reminder_offsets(payload.reminderOffsets, payload.time)
             except HabitError as e:
                 raise HTTPException(status_code=e.status_code, detail=e.detail)
 
@@ -649,6 +655,8 @@ def create_task(
         }
         if payload.time is not None:
             task_dict["time"] = payload.time  # v1.5 (key absent for untimed tasks)
+        if reminder_offsets:
+            task_dict["reminderOffsets"] = reminder_offsets  # v1.5 (key absent without reminders)
 
         db = get_db()
         result = db.tasks.insert_one(task_dict)
@@ -687,7 +695,8 @@ def _reschedule_virtual_task(db, user_id: str, habit_id: str, occurrence_date: s
     try:
         new_task = reschedule_virtual_occurrence(
             db, user_id, habit_id, occurrence_date,
-            raw_update.get("date"), time_sent, raw_update.get("time")
+            raw_update.get("date"), time_sent, raw_update.get("time"),
+            raw_update.get("reminderOffsets")
         )
     except HabitError as e:
         raise HTTPException(status_code=e.status_code, detail=e.detail)
@@ -751,6 +760,39 @@ def update_task(
         new_time = raw_update.get("time")
         date_changed = new_date is not None and new_date != task.get("date")
         time_changed = time_sent and new_time != task.get("time")
+
+        # v1.5 reminders. They need a time, so the rule is checked against the
+        # time the task will have after this request.
+        sent_offsets = update_data.pop("reminderOffsets", None)
+        stored_offsets = task.get("reminderOffsets") or []
+        result_time = new_time if time_changed else task.get("time")
+        is_habit_instance = isinstance(task.get("habitId"), str)
+        will_detach = is_habit_instance and (date_changed or time_changed)
+
+        if sent_offsets is not None:
+            from habit_system import normalize_reminder_offsets, HabitError
+            try:
+                sent_offsets = normalize_reminder_offsets(sent_offsets, result_time)
+            except HabitError as e:
+                raise HTTPException(status_code=e.status_code, detail=e.detail)
+            if sent_offsets != stored_offsets or will_detach:
+                if is_habit_instance and not will_detach:
+                    # One source of truth: a habit's occurrences follow the habit.
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Reminders of a habit task are set on the habit"
+                    )
+                update_data["reminderOffsets"] = sent_offsets
+        elif will_detach:
+            # The detached one-off keeps the habit's reminders (none without a time)
+            from habit_system import inherited_reminder_offsets
+            source_habit = db.habits.find_one({"id": task["habitId"], "userId": user_id})
+            update_data["reminderOffsets"] = inherited_reminder_offsets(
+                source_habit or {"reminderOffsets": stored_offsets},
+                result_time
+            )
+        elif time_changed and result_time is None and stored_offsets:
+            update_data["reminderOffsets"] = []
 
         if date_changed or time_changed:
             if task.get("isCompleted", False):

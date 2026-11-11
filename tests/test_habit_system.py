@@ -813,6 +813,248 @@ class TestReschedule:
         assert "habitId" not in stored and stored["originHabitId"] == habit["id"]
 
 
+# ======================== TASK REMINDERS ========================
+
+class TestTaskReminders:
+    """reminderOffsets on tasks: same rules as habits (max 2, only with a time)."""
+
+    def one_off(self, client, expect=201, **extra):
+        body = {"title": "One-off", "details": "", "category": "Energy",
+                "estimatedImpact": "Saves ~1.0kg CO₂", "date": d(0)}
+        body.update(extra)
+        response = client.post("/api/tasks", json=body)
+        assert response.status_code == expect, response.text
+        return response.json().get("taskId")
+
+    # ---- create
+
+    def test_create_with_time_and_reminders(self, db, client):
+        task_id = self.one_off(client, time="09:00", reminderOffsets=[60, 0, 60])
+        assert db.tasks.find_one({"id": task_id})["reminderOffsets"] == [0, 60]
+        assert get_tasks(client, d(0))[0]["reminderOffsets"] == [0, 60]
+
+    def test_create_without_reminders_keeps_the_legacy_document_shape(self, db, client):
+        for extra in ({}, {"time": "09:00"}, {"reminderOffsets": []}, {"reminderOffsets": None}):
+            task_id = self.one_off(client, **extra)
+            assert "reminderOffsets" not in db.tasks.find_one({"id": task_id})
+
+    @pytest.mark.parametrize("extra", [
+        {"reminderOffsets": [15]},                                   # no time
+        {"time": "09:00", "reminderOffsets": [0, 15, 60]},           # more than two
+        {"time": "09:00", "reminderOffsets": [-5]},
+        {"time": "09:00", "reminderOffsets": [1441]},
+        {"time": "09:00", "reminderOffsets": "15"},
+        {"time": "9am", "reminderOffsets": [15]},
+    ])
+    def test_create_rejects_invalid_reminders(self, db, client, user_id, extra):
+        self.one_off(client, expect=422, **extra)
+        assert db.tasks.count_documents({"userId": user_id}) == 0
+
+    # ---- update
+
+    def test_patch_sets_and_clears_reminders(self, db, client):
+        task_id = self.one_off(client, time="09:00")
+        response = client.patch(f"/api/tasks/{task_id}", json={"reminderOffsets": [15, 0]})
+        assert response.status_code == 200, response.text
+        assert "detached" not in response.json()
+        assert db.tasks.find_one({"id": task_id})["reminderOffsets"] == [0, 15]
+
+        assert client.patch(f"/api/tasks/{task_id}", json={"reminderOffsets": []}).status_code == 200
+        assert db.tasks.find_one({"id": task_id})["reminderOffsets"] == []
+
+    def test_patch_null_or_absent_leaves_reminders_alone(self, db, client):
+        task_id = self.one_off(client, time="09:00", reminderOffsets=[15])
+        response = client.patch(f"/api/tasks/{task_id}", json={"title": "Renamed", "reminderOffsets": None})
+        assert response.status_code == 200
+        stored = db.tasks.find_one({"id": task_id})
+        assert stored["title"] == "Renamed" and stored["reminderOffsets"] == [15]
+
+    def test_patch_echoing_the_stored_reminders_is_a_no_op(self, db, client):
+        task_id = self.one_off(client, time="09:00", reminderOffsets=[15])
+        assert client.patch(f"/api/tasks/{task_id}", json={"reminderOffsets": [15]}).status_code == 400
+        response = client.patch(f"/api/tasks/{task_id}", json={"title": "Renamed", "reminderOffsets": [15]})
+        assert response.status_code == 200
+        assert db.tasks.find_one({"id": task_id})["reminderOffsets"] == [15]
+
+    @pytest.mark.parametrize("change", [
+        {"reminderOffsets": [0, 15, 60]},
+        {"reminderOffsets": [2000]},
+        {"reminderOffsets": [-1]},
+    ])
+    def test_patch_rejects_invalid_reminders(self, db, client, change):
+        task_id = self.one_off(client, time="09:00", reminderOffsets=[15])
+        assert client.patch(f"/api/tasks/{task_id}", json=change).status_code == 422
+        assert db.tasks.find_one({"id": task_id})["reminderOffsets"] == [15]
+
+    def test_patch_rejects_reminders_on_a_task_without_time(self, db, client):
+        task_id = self.one_off(client)
+        assert client.patch(f"/api/tasks/{task_id}", json={"reminderOffsets": [15]}).status_code == 422
+        assert "reminderOffsets" not in db.tasks.find_one({"id": task_id})
+
+    def test_patch_can_add_time_and_reminders_together(self, db, client):
+        task_id = self.one_off(client)
+        response = client.patch(f"/api/tasks/{task_id}", json={"time": "18:00", "reminderOffsets": [60]})
+        assert response.status_code == 200, response.text
+        stored = db.tasks.find_one({"id": task_id})
+        assert stored["time"] == "18:00" and stored["reminderOffsets"] == [60]
+
+    def test_clearing_the_time_clears_the_reminders(self, db, client):
+        task_id = self.one_off(client, time="09:00", reminderOffsets=[0, 15])
+        assert client.patch(f"/api/tasks/{task_id}", json={"time": None}).status_code == 200
+        stored = db.tasks.find_one({"id": task_id})
+        assert stored["time"] is None and stored["reminderOffsets"] == []
+
+    def test_clearing_the_time_while_sending_reminders_is_rejected(self, db, client):
+        task_id = self.one_off(client, time="09:00", reminderOffsets=[15])
+        response = client.patch(f"/api/tasks/{task_id}", json={"time": None, "reminderOffsets": [15]})
+        assert response.status_code == 422
+        stored = db.tasks.find_one({"id": task_id})
+        assert stored["time"] == "09:00" and stored["reminderOffsets"] == [15]
+
+    def test_changing_date_or_time_keeps_the_reminders(self, db, client):
+        task_id = self.one_off(client, time="09:00", reminderOffsets=[15])
+        assert client.patch(f"/api/tasks/{task_id}", json={"date": d(3), "time": "10:30"}).status_code == 200
+        stored = db.tasks.find_one({"id": task_id})
+        assert (stored["date"], stored["time"], stored["reminderOffsets"]) == (d(3), "10:30", [15])
+
+    def test_completed_task_can_still_drop_its_reminders(self, db, client):
+        task_id = self.one_off(client, time="09:00", reminderOffsets=[15])
+        db.tasks.update_one({"id": task_id}, {"$set": {"isCompleted": True, "completedAt": datetime.utcnow()}})
+        assert client.patch(f"/api/tasks/{task_id}", json={"reminderOffsets": []}).status_code == 200
+        assert db.tasks.find_one({"id": task_id})["reminderOffsets"] == []
+
+    # ---- habit occurrences
+
+    def test_instance_and_virtual_occurrence_expose_the_habits_reminders(self, client):
+        create_habit(client, time="08:00", reminderOffsets=[15, 0])
+        assert get_tasks(client, d(0))[0]["reminderOffsets"] == [0, 15]
+        virtual = get_tasks(client, d(2))[0]
+        assert virtual["isVirtual"] is True and virtual["reminderOffsets"] == [0, 15]
+
+    def test_all_day_habit_occurrences_have_no_reminders(self, client):
+        create_habit(client, time=None, reminderOffsets=[])
+        assert get_tasks(client, d(0))[0]["reminderOffsets"] == []
+        assert get_tasks(client, d(2))[0]["reminderOffsets"] == []
+
+    def test_habit_reminder_edit_reaches_todays_instance_and_future_days(self, client):
+        habit = create_habit(client, reminderOffsets=[0])
+        assert get_tasks(client, d(0))[0]["reminderOffsets"] == [0]
+        response = client.patch(f"/api/habits/{habit['id']}?tz=UTC", json={"reminderOffsets": [60]})
+        assert response.status_code == 200, response.text
+        assert get_tasks(client, d(0))[0]["reminderOffsets"] == [60]
+        assert get_tasks(client, d(1))[0]["reminderOffsets"] == [60]
+
+    def test_reminders_of_a_habit_instance_are_set_on_the_habit(self, db, client):
+        create_habit(client, reminderOffsets=[0, 15])
+        task = get_tasks(client, d(0))[0]
+        response = client.patch(f"/api/tasks/{task['id']}", json={"reminderOffsets": [60]})
+        assert response.status_code == 400
+        assert "habit" in response.json()["detail"]
+        stored = db.tasks.find_one({"id": task["id"]})
+        assert stored["reminderOffsets"] == [0, 15] and "habitId" in stored
+        # Echoing the current value next to another change is harmless
+        response = client.patch(f"/api/tasks/{task['id']}", json={"title": "Renamed", "reminderOffsets": [0, 15]})
+        assert response.status_code == 200 and "detached" not in response.json()
+
+    # ---- detach (real instance)
+
+    def test_moving_a_habit_instance_copies_the_habits_reminders(self, db, client):
+        create_habit(client, reminderOffsets=[0, 15])
+        task = get_tasks(client, d(0))[0]
+        response = client.patch(f"/api/tasks/{task['id']}", json={"date": d(2)})
+        assert response.json()["detached"] is True
+        assert db.tasks.find_one({"id": task["id"]})["reminderOffsets"] == [0, 15]
+
+    def test_detach_copies_from_the_habit_even_when_the_row_has_no_reminder_field(self, db, client):
+        """Rows materialized before tasks had reminderOffsets."""
+        create_habit(client, reminderOffsets=[60])
+        task = get_tasks(client, d(0))[0]
+        db.tasks.update_one({"id": task["id"]}, {"$unset": {"reminderOffsets": ""}})
+        client.patch(f"/api/tasks/{task['id']}", json={"time": "19:00"})
+        stored = db.tasks.find_one({"id": task["id"]})
+        assert stored["time"] == "19:00" and stored["reminderOffsets"] == [60] and "habitId" not in stored
+
+    def test_detach_to_all_day_drops_the_reminders(self, db, client):
+        create_habit(client, reminderOffsets=[0, 15])
+        task = get_tasks(client, d(0))[0]
+        response = client.patch(f"/api/tasks/{task['id']}", json={"date": d(1), "time": None})
+        assert response.status_code == 200, response.text
+        stored = db.tasks.find_one({"id": task["id"]})
+        assert stored["time"] is None and stored["reminderOffsets"] == []
+
+    def test_detach_with_explicit_reminders_uses_them(self, db, client):
+        create_habit(client, reminderOffsets=[0, 15])
+        task = get_tasks(client, d(0))[0]
+        response = client.patch(f"/api/tasks/{task['id']}", json={"date": d(1), "reminderOffsets": [60]})
+        assert response.status_code == 200 and response.json()["detached"] is True
+        assert db.tasks.find_one({"id": task["id"]})["reminderOffsets"] == [60]
+
+    def test_detach_with_invalid_reminders_changes_nothing(self, db, client):
+        habit = create_habit(client, reminderOffsets=[0, 15])
+        task = get_tasks(client, d(0))[0]
+        response = client.patch(f"/api/tasks/{task['id']}", json={"time": None, "reminderOffsets": [60]})
+        assert response.status_code == 422
+        assert db.tasks.find_one({"id": task["id"]})["habitId"] == habit["id"]
+        assert db.habits.find_one({"id": habit["id"]})["skippedDates"] == []
+
+    def test_detached_task_keeps_its_reminders_when_the_habit_changes(self, db, client):
+        habit = create_habit(client, reminderOffsets=[0, 15])
+        task = get_tasks(client, d(0))[0]
+        client.patch(f"/api/tasks/{task['id']}", json={"date": d(1)})
+        client.patch(f"/api/habits/{habit['id']}?tz=UTC", json={"reminderOffsets": []})
+        assert db.tasks.find_one({"id": task["id"]})["reminderOffsets"] == [0, 15]
+        client.delete(f"/api/habits/{habit['id']}?tz=UTC")
+        assert db.tasks.find_one({"id": task["id"]})["reminderOffsets"] == [0, 15]
+
+    def test_instance_of_a_deleted_habit_still_detaches_with_reminders(self, db, client):
+        habit = create_habit(client, startDate=d(-1), reminderOffsets=[15])
+        past = get_tasks(client, d(-1))[0]
+        client.delete(f"/api/habits/{habit['id']}?tz=UTC")
+        response = client.patch(f"/api/tasks/{past['id']}", json={"date": d(0)})
+        assert response.status_code == 200, response.text
+        assert db.tasks.find_one({"id": past["id"]})["reminderOffsets"] == [15]
+
+    # ---- detach (virtual occurrence)
+
+    def test_rescheduling_a_virtual_occurrence_copies_the_habits_reminders(self, db, client):
+        habit = create_habit(client, reminderOffsets=[0, 15])
+        response = client.patch(f"/api/tasks/habit_{habit['id']}_{d(2)}", json={"date": d(4)})
+        assert response.status_code == 200, response.text
+        moved = db.tasks.find_one({"id": response.json()["taskId"]})
+        assert moved["reminderOffsets"] == [0, 15] and "habitId" not in moved
+        listed = [t for t in get_tasks(client, d(4)) if not t.get("isVirtual")]
+        assert listed[0]["reminderOffsets"] == [0, 15]
+
+    def test_rescheduling_a_virtual_occurrence_to_all_day_drops_reminders(self, db, client):
+        habit = create_habit(client, reminderOffsets=[0, 15])
+        response = client.patch(f"/api/tasks/habit_{habit['id']}_{d(2)}", json={"time": None})
+        assert response.status_code == 200, response.text
+        moved = db.tasks.find_one({"id": response.json()["taskId"]})
+        assert moved["time"] is None and moved["reminderOffsets"] == []
+
+    def test_rescheduling_a_virtual_occurrence_with_explicit_reminders(self, db, client):
+        habit = create_habit(client, reminderOffsets=[0, 15])
+        response = client.patch(
+            f"/api/tasks/habit_{habit['id']}_{d(2)}", json={"time": "20:00", "reminderOffsets": [60]}
+        )
+        assert response.status_code == 200, response.text
+        assert db.tasks.find_one({"id": response.json()["taskId"]})["reminderOffsets"] == [60]
+
+    def test_rescheduling_a_virtual_occurrence_with_invalid_reminders_changes_nothing(self, db, client, user_id):
+        habit = create_habit(client, reminderOffsets=[0, 15])
+        for change in ({"time": None, "reminderOffsets": [15]}, {"date": d(4), "reminderOffsets": [0, 15, 60]}):
+            response = client.patch(f"/api/tasks/habit_{habit['id']}_{d(2)}", json=change)
+            assert response.status_code == 422
+        assert db.habits.find_one({"id": habit["id"]})["skippedDates"] == []
+        assert db.tasks.count_documents({"userId": user_id}) == 0
+
+    def test_reminders_alone_cannot_address_a_virtual_occurrence(self, db, client, user_id):
+        habit = create_habit(client, reminderOffsets=[0])
+        response = client.patch(f"/api/tasks/habit_{habit['id']}_{d(2)}", json={"reminderOffsets": [60]})
+        assert response.status_code == 400
+        assert db.tasks.count_documents({"userId": user_id}) == 0
+
+
 # ======================== HABIT CRUD ========================
 
 class TestCreateHabit:

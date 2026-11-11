@@ -34,7 +34,7 @@ from streak_system import user_today
 # ======================== CONSTANTS ========================
 
 MAX_ACTIVE_HABITS = 30            # Hard cap per user
-MAX_REMINDER_OFFSETS = 2          # Reminders per habit
+MAX_REMINDER_OFFSETS = 2          # Reminders per habit or task
 MAX_REMINDER_OFFSET_MINUTES = 1440
 MAX_INTERVAL_DAYS = 365
 MAX_START_BACKDATE_DAYS = 1       # startDate may be at most 1 day in the past
@@ -136,7 +136,10 @@ def normalize_recurrence(raw) -> Dict:
 
 
 def normalize_reminder_offsets(offsets, time_value: Optional[str]) -> List[int]:
-    """Minutes before `time`. Max 2, unique. Must be empty for all-day habits."""
+    """
+    Minutes before `time`. Max 2, unique. Must be empty when there is no time.
+    The same rule applies to habits and to one-off tasks.
+    """
     if offsets is None:
         offsets = []
     if not isinstance(offsets, list):
@@ -148,10 +151,20 @@ def normalize_reminder_offsets(offsets, time_value: Optional[str]) -> List[int]:
             raise _invalid(f"reminderOffsets must be between 0 and {MAX_REMINDER_OFFSET_MINUTES} minutes")
     unique = sorted(set(offsets))
     if len(unique) > MAX_REMINDER_OFFSETS:
-        raise _invalid(f"At most {MAX_REMINDER_OFFSETS} reminders per habit")
+        raise _invalid(f"At most {MAX_REMINDER_OFFSETS} reminders")
     if unique and time_value is None:
-        raise _invalid("reminderOffsets must be empty when time is null (all-day habits have no reminders)")
+        raise _invalid("reminderOffsets must be empty when time is null (all-day items have no reminders)")
     return unique
+
+
+def inherited_reminder_offsets(habit: Optional[Dict], time_value: Optional[str]) -> List[int]:
+    """
+    Reminders a task takes over from its habit: the habit's offsets while the
+    task has a time, none once it is all-day.
+    """
+    if not habit or time_value is None:
+        return []
+    return list(habit.get("reminderOffsets") or [])
 
 
 def compute_points(co2_kg: float) -> int:
@@ -254,6 +267,7 @@ def _task_fields_from_habit(habit: Dict) -> Dict:
         "estimatedImpact": habit.get("estimatedImpact") or format_impact(habit.get("co2Kg", 0.0)),
         "co2Kg": habit.get("co2Kg", 0.0),
         "time": habit.get("time"),
+        "reminderOffsets": inherited_reminder_offsets(habit, habit.get("time")),
         "evidenceImagePath": None,
         "creatorType": "user",
         "sharedBy": None,
@@ -660,10 +674,13 @@ def reschedule_virtual_occurrence(
     new_date_str: Optional[str],
     time_provided: bool,
     new_time: Optional[str],
+    reminder_offsets: Optional[List[int]] = None,
 ) -> Dict:
     """
     Reschedule a future (virtual) occurrence: create a detached one-off task
     on the new date/time and skip the original date. Returns the new task.
+    The task keeps the habit's reminders unless `reminder_offsets` is given;
+    without a time it has none.
     """
     habit = get_habit(db, user_id, habit_id)
     original_day = parse_date(original_date_str)
@@ -676,6 +693,11 @@ def reschedule_virtual_occurrence(
     if target_date == original_date_str and target_time == habit.get("time"):
         raise HabitError(400, "No fields to update")
 
+    if reminder_offsets is not None:
+        target_offsets = normalize_reminder_offsets(reminder_offsets, target_time)
+    else:
+        target_offsets = inherited_reminder_offsets(habit, target_time)
+
     # Skip first, then create: a failure in between can never leave a duplicate.
     add_skipped_dates(db, user_id, habit_id, [original_date_str])
 
@@ -686,6 +708,7 @@ def reschedule_virtual_occurrence(
         "userId": user_id,
         "date": target_date,
         "time": target_time,
+        "reminderOffsets": target_offsets,
         "originHabitId": habit_id,
         "createdAt": now,
         "updatedAt": now,
