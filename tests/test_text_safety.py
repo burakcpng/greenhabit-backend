@@ -9,6 +9,7 @@ the iOS ContentSafetyFilter.swift.
 Run:  python3 -m pytest tests/test_text_safety.py -v
 """
 
+import json
 import os
 import sys
 
@@ -121,3 +122,65 @@ def test_same_rule_as_the_ios_filter():
         assert f'"{unit}"' in source, f"unit {unit!r} missing on iOS"
     for key, value in ProfanityFilter.LEET_MAP.items():
         assert f'"{key}": "{value}"' in source, f"leet {key!r} → {value!r} missing on iOS"
+
+
+# ── The corpus shared with the iOS filter ──────────────────────────────────
+#   Canonical copy : <ios repo>/shared/content_filter_corpus.json
+#   This repo      : tests/fixtures/content_filter_corpus.json   (never edit by hand)
+#   Sync           : <ios repo>/scripts/sync_recurrence_fixture.sh  [--check]
+
+BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CORPUS_PATH = os.path.join(BACKEND_ROOT, "tests", "fixtures", "content_filter_corpus.json")
+CANONICAL_CORPUS_PATH = os.path.join(os.path.dirname(BACKEND_ROOT), "shared", "content_filter_corpus.json")
+
+with open(CORPUS_PATH, encoding="utf-8") as corpus_file:
+    CORPUS = json.load(corpus_file)
+
+# Ordinary titles the backend still refuses, because the word itself is on its
+# list. Removing an entry is a product decision (it would weaken the check),
+# so these stay refused until it is made. The iOS filter accepts them.
+PENDING_DECISION = {
+    "Kaşar peyniri yerine sebze ye": "kaşar",     # a cheese; also a slur
+    "Anne ile alışverişe git": "anne",              # "mother"
+    "Babanne için kek yap": "babanne",              # "grandmother"
+}
+
+
+def test_corpus_is_large_enough():
+    assert CORPUS["schema"] == 1
+    assert len(CORPUS["allowed"]) >= 150
+    assert set(PENDING_DECISION) <= set(CORPUS["allowed"])
+
+
+@pytest.mark.parametrize("title", [t for t in CORPUS["allowed"] if t not in PENDING_DECISION])
+def test_corpus_ordinary_titles_are_accepted(title):
+    assert ProfanityFilter.is_safe(title), title
+
+
+@pytest.mark.parametrize("title, word", sorted(PENDING_DECISION.items()))
+def test_corpus_titles_pending_a_decision_are_still_refused(title, word):
+    assert not ProfanityFilter.is_safe(title)
+    assert word in ProfanityFilter.BANNED_WORDS
+
+
+@pytest.mark.parametrize("text", CORPUS["refused"])
+def test_corpus_obscene_texts_are_refused(text):
+    assert not ProfanityFilter.is_safe(text), text
+
+
+def test_corpus_copy_matches_the_canonical_file():
+    if not os.path.exists(CANONICAL_CORPUS_PATH):
+        pytest.skip("iOS repo not next to the backend")
+    with open(CANONICAL_CORPUS_PATH, "rb") as canonical, open(CORPUS_PATH, "rb") as copy:
+        assert canonical.read() == copy.read(), "run scripts/sync_recurrence_fixture.sh in the iOS repo"
+
+
+@pytest.mark.parametrize("text", ["Sık sık su iç", "Proti nudě číst knihu", "Got my bike fixed", "Go to bed by 11",
+                                  "Vitamin D a day", "Read Dickens for an hour"])
+def test_folding_and_joining_do_not_create_false_positives(text):
+    assert ProfanityFilter.is_safe(text)
+
+
+@pytest.mark.parametrize("text", ["fück", "fu\u0441k", "f u c k", "f.u.c.k", "f_u_c_k", "fu ck", "s h i t", "nude"])
+def test_spaced_out_lookalike_and_accented_forms_are_refused(text):
+    assert not ProfanityFilter.is_safe(text)

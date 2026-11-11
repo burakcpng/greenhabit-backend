@@ -1,4 +1,5 @@
 import re
+import unicodedata
 
 class ProfanityFilter:
     """
@@ -93,6 +94,15 @@ class ProfanityFilter:
         "amina", "amına" , "amcik" , "bacısiken" , "kaşar" , "gevende" , "döl" , "zenci" ,
         "penci" ,"zorno" , "bacını" , "ananı" , "anne" , "babanne" , "sakso" , "taşak" ,
         "taşşak" , "sıç" , "sıçmak" ,
+
+        # Common inflected forms (whole words only: list the forms themselves)
+        "fucked", "fucker", "fucks", "dickhead", "cocksucker", "wanker",
+        "siktirgit", "sikerim", "sikeyim", "orospular", "orospunun", "piçler", "götveren",
+
+        # Czech (with and without diacritics)
+        "kurva", "kurvo", "kurvy", "kurvě", "píča", "píčo", "pica", "pico", "kokot", "kokote", "kokoti",
+        "čurák", "curak", "hovno", "hovna", "prdel", "mrdat", "mrdka", "šukat", "sukat", "zmrd", "zmrde",
+        "hajzl", "hajzle", "kunda", "děvka", "devka", "buzerant", "debil", "zkurvysyn",
     }
 
     # ── Leet-speak, per word ────────────────────────────────────────────────
@@ -119,6 +129,17 @@ class ProfanityFilter:
         "gb", "mb", "tb", "p", "pcs", "pc",
     }
 
+    # Lookalike letters from other scripts (same table as the iOS filter).
+    HOMOGLYPHS = {
+        "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "х": "x", "у": "y", "і": "i", "ѕ": "s", "ј": "j",
+        "ԁ": "d", "ԛ": "q", "ԝ": "w", "ѵ": "v", "ո": "n",
+        "α": "a", "β": "b", "ε": "e", "ι": "i", "κ": "k", "ν": "n", "ο": "o", "ρ": "p", "τ": "t", "υ": "y",
+        "χ": "x", "η": "n", "θ": "o", "μ": "m", "ω": "w",
+        "ｆ": "f", "ｕ": "u", "ｃ": "c", "ｋ": "k",
+    }
+    _ZERO_WIDTH = re.compile("[\u200b\u200c\u200d\ufeff\u00ad\u2060\u180e]")
+    _WORD_PIECE = re.compile(r"[^\W_]+")
+
     _NUMBER_WITH_UNIT = re.compile(r"^[0-9][0-9.,:]*(?P<unit>.*)$")
     _EDGE_PUNCTUATION = re.compile(r"^[^\w°]+|[^\w°]+$")
 
@@ -138,30 +159,75 @@ class ProfanityFilter:
             return token
         return "".join(ProfanityFilter.LEET_MAP.get(ch, ch) for ch in token)
 
+    # Entries that match only as written, never after removing diacritics,
+    # because a word of another language folds onto them: Czech "nudě"
+    # (boredom) → "nude". (Turkish "sık" keeps its dotless ı, so it never
+    # becomes "sik".)
+    AS_WRITTEN_ONLY = {"nude"}
+
+    @staticmethod
+    def plain(word: str) -> str:
+        """The word without diacritics ("fück" → "fuck"). Dotless "ı" stays."""
+        decomposed = unicodedata.normalize("NFD", word)
+        return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+
+    @staticmethod
+    def words(text: str) -> list:
+        """
+        The words of `text`, lowercased, with lookalike letters and leet-speak
+        resolved. Separators inside a word are dropped ("f.u.c.k" → "fuck") and
+        runs of single letters are joined ("s h i t" → "shit").
+        """
+        cleaned = ProfanityFilter._ZERO_WIDTH.sub("", text).lower()
+        cleaned = "".join(ProfanityFilter.HOMOGLYPHS.get(ch, ch) for ch in cleaned)
+        cleaned = " ".join(ProfanityFilter.substitute_leet(t) for t in cleaned.split())
+        words, letters = [], ""
+        for piece in ProfanityFilter._WORD_PIECE.findall(cleaned):
+            if len(piece) == 1:
+                letters += piece
+                continue
+            if letters:
+                words.append(letters)
+                letters = ""
+            words.append(piece)
+        if letters:
+            words.append(letters)
+        return words
+
+    @staticmethod
+    def _is_banned(word: str) -> bool:
+        # As written, or without diacritics against the entries that have none
+        # ("fück" → "fuck"; "göt" stays "göt", so English "got" is never hit).
+        return word in ProfanityFilter.BANNED_WORDS or ProfanityFilter.plain(word) in ProfanityFilter._ASCII_ENTRIES
+
     @staticmethod
     def is_safe(text: str) -> bool:
         """
         Returns True if text is safe (no banned words).
         Returns False if text contains banned words.
+        Whole words only: a banned word inside another word does not count.
         """
         if not text:
             return True
-            
-        # Normalize: lowercase, then leet-speak word by word
-        cleaned_text = " ".join(ProfanityFilter.substitute_leet(t) for t in text.lower().split())
-        
-        # Check against blocklist using word boundaries
-        words = re.findall(r'\b\w+\b', cleaned_text)
-        
-        for word in words:
-            if word in ProfanityFilter.BANNED_WORDS:
-                return False
+
+        words = ProfanityFilter.words(text)
+        if any(ProfanityFilter._is_banned(word) for word in words):
+            return False
+
+        # A word split into short pieces ("fu ck", "sh it"). The pieces must
+        # join to exactly a banned word ("go to" is not "got").
+        for size in (2, 3, 4):
+            for start in range(len(words) - size + 1):
+                window = words[start:start + size]
+                if all(len(piece) <= 3 for piece in window) and ProfanityFilter._is_banned("".join(window)):
+                    return False
 
         # Entries that are not words (e.g. the middle-finger emoji)
+        lowered = text.lower()
         for entry in ProfanityFilter._NON_WORD_ENTRIES:
-            if entry in cleaned_text:
+            if entry in lowered:
                 return False
-                
+
         return True
 
     @staticmethod
@@ -175,3 +241,6 @@ class ProfanityFilter:
 
 
 ProfanityFilter._NON_WORD_ENTRIES = {w for w in ProfanityFilter.BANNED_WORDS if not re.search(r"\w", w)}
+ProfanityFilter._ASCII_ENTRIES = {
+    w for w in ProfanityFilter.BANNED_WORDS if w.isascii() and w not in ProfanityFilter.AS_WRITTEN_ONLY
+}
