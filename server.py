@@ -1540,14 +1540,17 @@ def get_achievements(user_id: str = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=f"Failed to fetch achievements: {str(e)}")
 
 @api.get("/streak")
-def get_streak(user_id: str = Depends(get_current_user)):
+def get_streak(
+    tz: Optional[str] = Query(None),  # IANA timezone the client is in right now
+    user_id: str = Depends(get_current_user)
+):
     """Get streak information with read-time decay — O(1) read + TZ date math."""
     try:
         db = get_db()
-        
+
         from streak_system import get_streak_with_decay
-        
-        return get_streak_with_decay(db, user_id)
+
+        return get_streak_with_decay(db, user_id, tz)
     except HTTPException:
         raise
     except Exception as e:

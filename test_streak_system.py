@@ -8,9 +8,12 @@ to avoid triggering the anti-cheat backdate guard (MAX_BACKDATE_DAYS = 7).
 """
 
 import pytest
-from datetime import datetime, date, timedelta
+import pytz
+from datetime import datetime, date, timedelta, timezone
 from unittest.mock import MagicMock, patch
 from pymongo.errors import DuplicateKeyError
+
+import streak_system
 
 from streak_system import (
     record_completion,
@@ -28,8 +31,24 @@ from streak_system import (
 # ======================== HELPERS ========================
 
 def _d(offset: int) -> str:
-    """Return YYYY-MM-DD for today + offset days."""
-    return (date.today() + timedelta(days=offset)).isoformat()
+    """
+    Return YYYY-MM-DD for UTC today + offset days.
+
+    UTC on purpose: every test below passes tz "UTC", and the engine compares
+    against the server's UTC clock. The machine's local date (date.today())
+    differs from the UTC date for part of every day outside UTC.
+    """
+    return (datetime.now(timezone.utc).date() + timedelta(days=offset)).isoformat()
+
+
+# Fixed clock for read-time decay tests: 23:39 UTC on 10 Nov 2026.
+# At that instant it is already 11 Nov in Europe/Prague (00:39) and
+# Europe/Istanbul (02:39) — the exact situation that exposed the old flaky test.
+FIXED_NOW_UTC = datetime(2026, 11, 10, 23, 39, tzinfo=timezone.utc)
+
+
+def fixed_user_today(tz_id: str) -> date:
+    return FIXED_NOW_UTC.astimezone(pytz.timezone(tz_id)).date()
 
 
 # ======================== FIXTURES ========================
@@ -329,43 +348,44 @@ class TestFullRecalculation:
 # ======================== TESTS: READ-TIME DECAY ========================
 
 class TestReadTimeDecay:
-    def test_completed_today(self, db):
-        db.user_profiles.documents.append({
+    """
+    Deterministic: the clock is fixed at FIXED_NOW_UTC (23:39 UTC, 10 Nov 2026),
+    so the UTC date is 2026-11-10 while Prague and Istanbul are already on
+    2026-11-11. No date.today(), no dependence on when or where the suite runs.
+    """
+
+    @pytest.fixture(autouse=True)
+    def fixed_clock(self, monkeypatch):
+        monkeypatch.setattr(streak_system, "user_today", fixed_user_today)
+
+    def _profile(self, db, last_date, tz="UTC"):
+        profile = {
             "userId": "user1",
             "currentStreak": 15,
             "longestStreak": 42,
-            "lastCompletedLocalDate": _d(0),
-            "lastTimezoneIdentifier": "UTC",
+            "lastCompletedLocalDate": last_date,
             "streakVersion": 5,
-        })
+        }
+        if tz is not None:
+            profile["lastTimezoneIdentifier"] = tz
+        db.user_profiles.documents.append(profile)
+
+    def test_completed_today(self, db):
+        self._profile(db, "2026-11-10")
         result = get_streak_with_decay(db, "user1")
         assert result["currentStreak"] == 15
         assert result["streakAlive"] == True
         assert result["streakAtRisk"] == False
 
     def test_completed_yesterday_at_risk(self, db):
-        db.user_profiles.documents.append({
-            "userId": "user1",
-            "currentStreak": 15,
-            "longestStreak": 42,
-            "lastCompletedLocalDate": _d(-1),
-            "lastTimezoneIdentifier": "UTC",
-            "streakVersion": 5,
-        })
+        self._profile(db, "2026-11-09")
         result = get_streak_with_decay(db, "user1")
         assert result["currentStreak"] == 15
         assert result["streakAlive"] == True
         assert result["streakAtRisk"] == True
 
     def test_expired_streak(self, db):
-        db.user_profiles.documents.append({
-            "userId": "user1",
-            "currentStreak": 15,
-            "longestStreak": 42,
-            "lastCompletedLocalDate": _d(-3),
-            "lastTimezoneIdentifier": "UTC",
-            "streakVersion": 5,
-        })
+        self._profile(db, "2026-11-07")
         result = get_streak_with_decay(db, "user1")
         assert result["currentStreak"] == 0
         assert result["streakAlive"] == False
@@ -375,6 +395,46 @@ class TestReadTimeDecay:
         result = get_streak_with_decay(db, "nonexistent")
         assert result["currentStreak"] == 0
         assert result["streakAlive"] == False
+
+    # ── "Today" is the user's today, not UTC's ──
+
+    def test_at_risk_uses_the_stored_user_timezone(self, db):
+        """Last completion 10 Nov. Past midnight in Istanbul → at risk; still 10 Nov in UTC → not."""
+        self._profile(db, "2026-11-10", tz="Europe/Istanbul")
+        assert get_streak_with_decay(db, "user1")["streakAtRisk"] == True
+
+    def test_same_instant_same_date_is_not_at_risk_for_a_utc_user(self, db):
+        self._profile(db, "2026-11-10", tz="UTC")
+        assert get_streak_with_decay(db, "user1")["streakAtRisk"] == False
+
+    def test_completed_after_local_midnight_is_not_at_risk(self, db):
+        """Istanbul user completed on their 11 Nov; the UTC date is still the 10th."""
+        self._profile(db, "2026-11-11", tz="Europe/Istanbul")
+        result = get_streak_with_decay(db, "user1")
+        assert result["streakAlive"] == True
+        assert result["streakAtRisk"] == False
+
+    def test_streak_expires_on_the_users_calendar(self, db):
+        """Last completion 9 Nov: expired in Istanbul (11 Nov), merely at risk in UTC (10 Nov)."""
+        self._profile(db, "2026-11-09", tz="Europe/Istanbul")
+        assert get_streak_with_decay(db, "user1")["streakAlive"] == False
+
+    def test_client_timezone_fixes_legacy_profile_without_stored_tz(self, db):
+        """A profile with no stored timezone used to be evaluated in UTC."""
+        self._profile(db, "2026-11-10", tz=None)
+        assert get_streak_with_decay(db, "user1")["streakAtRisk"] == False                      # UTC fallback
+        assert get_streak_with_decay(db, "user1", "Europe/Prague")["streakAtRisk"] == True      # UTC+1, 00:39
+        assert get_streak_with_decay(db, "user1", "Europe/Istanbul")["streakAtRisk"] == True    # UTC+3, 02:39
+
+    def test_client_timezone_overrides_stored_timezone(self, db):
+        """User last completed in UTC, has since travelled to Istanbul."""
+        self._profile(db, "2026-11-10", tz="UTC")
+        assert get_streak_with_decay(db, "user1", "Europe/Istanbul")["streakAtRisk"] == True
+
+    def test_invalid_client_timezone_falls_back_to_stored(self, db):
+        self._profile(db, "2026-11-10", tz="Europe/Istanbul")
+        for bad in ["Mars/Olympus", "", None, 3]:
+            assert get_streak_with_decay(db, "user1", bad)["streakAtRisk"] == True
 
 
 # ======================== TESTS: SAFE FALLBACK ========================
