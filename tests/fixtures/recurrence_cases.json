@@ -1,0 +1,1037 @@
+{
+  "schema": 1,
+  "about": "Recurrence parity cases shared by the backend (habit_system.occurs_on) and iOS (HabitRecurrenceEngine). For every day D with from <= D <= to, the habit occurs on D exactly when D is listed in expected. Weekdays are ISO-8601 (1 = Monday ... 7 = Sunday). 'timezone' is only used by clients that convert wall-clock instants to calendar days; recurrence itself is defined on calendar days. Canonical copy: shared/recurrence_cases.json in the iOS repo. Do not edit the backend copy by hand; run scripts/sync_recurrence_fixture.sh.",
+  "cases": [
+    {
+      "name": "daily_basic",
+      "habit": {
+        "startDate": "2026-03-02",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "daily"
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-03-01",
+      "to": "2026-03-08",
+      "expected": [
+        "2026-03-02",
+        "2026-03-03",
+        "2026-03-04",
+        "2026-03-05",
+        "2026-03-06",
+        "2026-03-07",
+        "2026-03-08"
+      ],
+      "note": "starts on a Monday; day before start excluded"
+    },
+    {
+      "name": "daily_range_entirely_before_start",
+      "habit": {
+        "startDate": "2026-03-02",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "daily"
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-02-20",
+      "to": "2026-03-01",
+      "expected": []
+    },
+    {
+      "name": "daily_start_boundary",
+      "habit": {
+        "startDate": "2026-03-02",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "daily"
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-03-01",
+      "to": "2026-03-03",
+      "expected": [
+        "2026-03-02",
+        "2026-03-03"
+      ]
+    },
+    {
+      "name": "daily_end_date_inclusive",
+      "habit": {
+        "startDate": "2026-03-02",
+        "endDate": "2026-03-05",
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "daily"
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-03-03",
+      "to": "2026-03-08",
+      "expected": [
+        "2026-03-03",
+        "2026-03-04",
+        "2026-03-05"
+      ],
+      "note": "endDate itself occurs"
+    },
+    {
+      "name": "daily_single_day_habit",
+      "habit": {
+        "startDate": "2026-03-04",
+        "endDate": "2026-03-04",
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "daily"
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-03-01",
+      "to": "2026-03-08",
+      "expected": [
+        "2026-03-04"
+      ],
+      "note": "startDate == endDate"
+    },
+    {
+      "name": "daily_skipped_dates",
+      "habit": {
+        "startDate": "2026-03-02",
+        "endDate": null,
+        "skippedDates": [
+          "2026-03-04",
+          "2026-03-06"
+        ],
+        "active": true,
+        "recurrence": {
+          "type": "daily"
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-03-02",
+      "to": "2026-03-08",
+      "expected": [
+        "2026-03-02",
+        "2026-03-03",
+        "2026-03-05",
+        "2026-03-07",
+        "2026-03-08"
+      ]
+    },
+    {
+      "name": "daily_skip_start_and_end",
+      "habit": {
+        "startDate": "2026-03-02",
+        "endDate": "2026-03-06",
+        "skippedDates": [
+          "2026-03-02",
+          "2026-03-06"
+        ],
+        "active": true,
+        "recurrence": {
+          "type": "daily"
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-03-01",
+      "to": "2026-03-08",
+      "expected": [
+        "2026-03-03",
+        "2026-03-04",
+        "2026-03-05"
+      ]
+    },
+    {
+      "name": "daily_inactive",
+      "habit": {
+        "startDate": "2026-03-02",
+        "endDate": null,
+        "skippedDates": [],
+        "active": false,
+        "recurrence": {
+          "type": "daily"
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-03-01",
+      "to": "2026-03-08",
+      "expected": [],
+      "note": "soft-deleted habit never occurs"
+    },
+    {
+      "name": "daily_month_boundary",
+      "habit": {
+        "startDate": "2026-01-01",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "daily"
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-01-29",
+      "to": "2026-02-03",
+      "expected": [
+        "2026-01-29",
+        "2026-01-30",
+        "2026-01-31",
+        "2026-02-01",
+        "2026-02-02",
+        "2026-02-03"
+      ]
+    },
+    {
+      "name": "daily_year_boundary",
+      "habit": {
+        "startDate": "2026-12-01",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "daily"
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-12-29",
+      "to": "2027-01-03",
+      "expected": [
+        "2026-12-29",
+        "2026-12-30",
+        "2026-12-31",
+        "2027-01-01",
+        "2027-01-02",
+        "2027-01-03"
+      ]
+    },
+    {
+      "name": "daily_leap_day_2028",
+      "habit": {
+        "startDate": "2028-01-01",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "daily"
+        }
+      },
+      "timezone": "UTC",
+      "from": "2028-02-27",
+      "to": "2028-03-02",
+      "expected": [
+        "2028-02-27",
+        "2028-02-28",
+        "2028-02-29",
+        "2028-03-01",
+        "2028-03-02"
+      ],
+      "note": "2028-02-29 exists"
+    },
+    {
+      "name": "daily_non_leap_february_2027",
+      "habit": {
+        "startDate": "2027-01-01",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "daily"
+        }
+      },
+      "timezone": "UTC",
+      "from": "2027-02-26",
+      "to": "2027-03-02",
+      "expected": [
+        "2027-02-26",
+        "2027-02-27",
+        "2027-02-28",
+        "2027-03-01",
+        "2027-03-02"
+      ]
+    },
+    {
+      "name": "daily_century_non_leap_2100",
+      "habit": {
+        "startDate": "2100-01-01",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "daily"
+        }
+      },
+      "timezone": "UTC",
+      "from": "2100-02-27",
+      "to": "2100-03-02",
+      "expected": [
+        "2100-02-27",
+        "2100-02-28",
+        "2100-03-01",
+        "2100-03-02"
+      ],
+      "note": "2100 is not a leap year"
+    },
+    {
+      "name": "weekdays_mon_wed_fri",
+      "habit": {
+        "startDate": "2026-03-02",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "weekdays",
+          "weekdays": [
+            1,
+            3,
+            5
+          ]
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-03-02",
+      "to": "2026-03-15",
+      "expected": [
+        "2026-03-02",
+        "2026-03-04",
+        "2026-03-06",
+        "2026-03-09",
+        "2026-03-11",
+        "2026-03-13"
+      ],
+      "note": "ISO: 1 = Monday"
+    },
+    {
+      "name": "weekdays_weekend",
+      "habit": {
+        "startDate": "2026-03-02",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "weekdays",
+          "weekdays": [
+            6,
+            7
+          ]
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-03-02",
+      "to": "2026-03-15",
+      "expected": [
+        "2026-03-07",
+        "2026-03-08",
+        "2026-03-14",
+        "2026-03-15"
+      ]
+    },
+    {
+      "name": "weekdays_sunday_only_iso_7",
+      "habit": {
+        "startDate": "2026-03-02",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "weekdays",
+          "weekdays": [
+            7
+          ]
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-03-01",
+      "to": "2026-03-22",
+      "expected": [
+        "2026-03-08",
+        "2026-03-15",
+        "2026-03-22"
+      ],
+      "note": "ISO 7 = Sunday (Calendar.weekday would be 1)"
+    },
+    {
+      "name": "weekdays_monday_only_iso_1",
+      "habit": {
+        "startDate": "2026-03-02",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "weekdays",
+          "weekdays": [
+            1
+          ]
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-03-01",
+      "to": "2026-03-22",
+      "expected": [
+        "2026-03-02",
+        "2026-03-09",
+        "2026-03-16"
+      ],
+      "note": "ISO 1 = Monday (Calendar.weekday would be 2)"
+    },
+    {
+      "name": "weekdays_start_midweek",
+      "habit": {
+        "startDate": "2026-03-05",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "weekdays",
+          "weekdays": [
+            1,
+            3,
+            5
+          ]
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-03-02",
+      "to": "2026-03-13",
+      "expected": [
+        "2026-03-06",
+        "2026-03-09",
+        "2026-03-11",
+        "2026-03-13"
+      ],
+      "note": "starts Thursday: first occurrence is Friday"
+    },
+    {
+      "name": "weekdays_all_seven_is_daily",
+      "habit": {
+        "startDate": "2026-03-02",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "weekdays",
+          "weekdays": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ]
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-03-01",
+      "to": "2026-03-10",
+      "expected": [
+        "2026-03-02",
+        "2026-03-03",
+        "2026-03-04",
+        "2026-03-05",
+        "2026-03-06",
+        "2026-03-07",
+        "2026-03-08",
+        "2026-03-09",
+        "2026-03-10"
+      ]
+    },
+    {
+      "name": "weekdays_with_skip_and_end",
+      "habit": {
+        "startDate": "2026-03-02",
+        "endDate": "2026-03-12",
+        "skippedDates": [
+          "2026-03-05"
+        ],
+        "active": true,
+        "recurrence": {
+          "type": "weekdays",
+          "weekdays": [
+            2,
+            4
+          ]
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-03-01",
+      "to": "2026-03-20",
+      "expected": [
+        "2026-03-03",
+        "2026-03-10",
+        "2026-03-12"
+      ]
+    },
+    {
+      "name": "weekdays_thursdays_across_new_year",
+      "habit": {
+        "startDate": "2026-12-01",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "weekdays",
+          "weekdays": [
+            4
+          ]
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-12-20",
+      "to": "2027-01-10",
+      "expected": [
+        "2026-12-24",
+        "2026-12-31",
+        "2027-01-07"
+      ]
+    },
+    {
+      "name": "weekdays_leap_day_weekday",
+      "habit": {
+        "startDate": "2028-02-01",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "weekdays",
+          "weekdays": [
+            2
+          ]
+        }
+      },
+      "timezone": "UTC",
+      "from": "2028-02-20",
+      "to": "2028-03-10",
+      "expected": [
+        "2028-02-22",
+        "2028-02-29",
+        "2028-03-07"
+      ],
+      "note": "the weekday that 2028-02-29 falls on"
+    },
+    {
+      "name": "every_2_days_basic",
+      "habit": {
+        "startDate": "2026-03-02",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "everyNDays",
+          "interval": 2
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-03-01",
+      "to": "2026-03-12",
+      "expected": [
+        "2026-03-02",
+        "2026-03-04",
+        "2026-03-06",
+        "2026-03-08",
+        "2026-03-10",
+        "2026-03-12"
+      ]
+    },
+    {
+      "name": "every_3_days_anchored_on_start",
+      "habit": {
+        "startDate": "2026-03-03",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "everyNDays",
+          "interval": 3
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-03-01",
+      "to": "2026-03-16",
+      "expected": [
+        "2026-03-03",
+        "2026-03-06",
+        "2026-03-09",
+        "2026-03-12",
+        "2026-03-15"
+      ],
+      "note": "anchor is startDate, not an epoch"
+    },
+    {
+      "name": "every_3_days_other_anchor",
+      "habit": {
+        "startDate": "2026-03-04",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "everyNDays",
+          "interval": 3
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-03-01",
+      "to": "2026-03-16",
+      "expected": [
+        "2026-03-04",
+        "2026-03-07",
+        "2026-03-10",
+        "2026-03-13",
+        "2026-03-16"
+      ],
+      "note": "same interval, shifted anchor, different days"
+    },
+    {
+      "name": "every_7_days_is_weekly",
+      "habit": {
+        "startDate": "2026-03-04",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "everyNDays",
+          "interval": 7
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-03-01",
+      "to": "2026-04-02",
+      "expected": [
+        "2026-03-04",
+        "2026-03-11",
+        "2026-03-18",
+        "2026-03-25",
+        "2026-04-01"
+      ]
+    },
+    {
+      "name": "every_1_day_is_daily",
+      "habit": {
+        "startDate": "2026-03-02",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "everyNDays",
+          "interval": 1
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-03-01",
+      "to": "2026-03-08",
+      "expected": [
+        "2026-03-02",
+        "2026-03-03",
+        "2026-03-04",
+        "2026-03-05",
+        "2026-03-06",
+        "2026-03-07",
+        "2026-03-08"
+      ]
+    },
+    {
+      "name": "every_2_days_skip_does_not_shift_series",
+      "habit": {
+        "startDate": "2026-03-02",
+        "endDate": null,
+        "skippedDates": [
+          "2026-03-04"
+        ],
+        "active": true,
+        "recurrence": {
+          "type": "everyNDays",
+          "interval": 2
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-03-02",
+      "to": "2026-03-12",
+      "expected": [
+        "2026-03-02",
+        "2026-03-06",
+        "2026-03-08",
+        "2026-03-10",
+        "2026-03-12"
+      ]
+    },
+    {
+      "name": "every_3_days_month_boundary",
+      "habit": {
+        "startDate": "2026-01-30",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "everyNDays",
+          "interval": 3
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-01-28",
+      "to": "2026-02-12",
+      "expected": [
+        "2026-01-30",
+        "2026-02-02",
+        "2026-02-05",
+        "2026-02-08",
+        "2026-02-11"
+      ]
+    },
+    {
+      "name": "every_3_days_across_leap_february",
+      "habit": {
+        "startDate": "2028-02-25",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "everyNDays",
+          "interval": 3
+        }
+      },
+      "timezone": "UTC",
+      "from": "2028-02-24",
+      "to": "2028-03-08",
+      "expected": [
+        "2028-02-25",
+        "2028-02-28",
+        "2028-03-02",
+        "2028-03-05",
+        "2028-03-08"
+      ],
+      "note": "counts 2028-02-29"
+    },
+    {
+      "name": "every_3_days_across_non_leap_february",
+      "habit": {
+        "startDate": "2027-02-25",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "everyNDays",
+          "interval": 3
+        }
+      },
+      "timezone": "UTC",
+      "from": "2027-02-24",
+      "to": "2027-03-08",
+      "expected": [
+        "2027-02-25",
+        "2027-02-28",
+        "2027-03-03",
+        "2027-03-06"
+      ]
+    },
+    {
+      "name": "every_365_days_lands_on_leap_day",
+      "habit": {
+        "startDate": "2027-03-01",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "everyNDays",
+          "interval": 365
+        }
+      },
+      "timezone": "UTC",
+      "from": "2028-02-26",
+      "to": "2028-03-03",
+      "expected": [
+        "2028-02-29"
+      ],
+      "note": "2027-03-01 + 365 days = 2028-02-29"
+    },
+    {
+      "name": "every_5_days_range_starts_mid_series",
+      "habit": {
+        "startDate": "2026-01-01",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "everyNDays",
+          "interval": 5
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-06-01",
+      "to": "2026-06-20",
+      "expected": [
+        "2026-06-05",
+        "2026-06-10",
+        "2026-06-15",
+        "2026-06-20"
+      ],
+      "note": "range far from the anchor"
+    },
+    {
+      "name": "every_4_days_end_before_next",
+      "habit": {
+        "startDate": "2026-03-02",
+        "endDate": "2026-03-09",
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "everyNDays",
+          "interval": 4
+        }
+      },
+      "timezone": "UTC",
+      "from": "2026-03-01",
+      "to": "2026-03-20",
+      "expected": [
+        "2026-03-02",
+        "2026-03-06"
+      ],
+      "note": "endDate falls between occurrences"
+    },
+    {
+      "name": "dst_prague_spring_forward_daily",
+      "habit": {
+        "startDate": "2026-03-01",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "daily"
+        }
+      },
+      "timezone": "Europe/Prague",
+      "from": "2026-03-27",
+      "to": "2026-03-31",
+      "expected": [
+        "2026-03-27",
+        "2026-03-28",
+        "2026-03-29",
+        "2026-03-30",
+        "2026-03-31"
+      ],
+      "note": "clocks go 02:00 -> 03:00 on 2026-03-29 (23-hour day)"
+    },
+    {
+      "name": "dst_prague_fall_back_daily",
+      "habit": {
+        "startDate": "2026-10-01",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "daily"
+        }
+      },
+      "timezone": "Europe/Prague",
+      "from": "2026-10-23",
+      "to": "2026-10-27",
+      "expected": [
+        "2026-10-23",
+        "2026-10-24",
+        "2026-10-25",
+        "2026-10-26",
+        "2026-10-27"
+      ],
+      "note": "clocks go 03:00 -> 02:00 on 2026-10-25 (25-hour day)"
+    },
+    {
+      "name": "dst_prague_spring_forward_every_2_days",
+      "habit": {
+        "startDate": "2026-03-26",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "everyNDays",
+          "interval": 2
+        }
+      },
+      "timezone": "Europe/Prague",
+      "from": "2026-03-25",
+      "to": "2026-04-02",
+      "expected": [
+        "2026-03-26",
+        "2026-03-28",
+        "2026-03-30",
+        "2026-04-01"
+      ],
+      "note": "interval counted in calendar days, not 48-hour steps"
+    },
+    {
+      "name": "dst_prague_fall_back_sundays",
+      "habit": {
+        "startDate": "2026-10-01",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "weekdays",
+          "weekdays": [
+            7
+          ]
+        }
+      },
+      "timezone": "Europe/Prague",
+      "from": "2026-10-17",
+      "to": "2026-11-02",
+      "expected": [
+        "2026-10-18",
+        "2026-10-25",
+        "2026-11-01"
+      ],
+      "note": "the 25-hour Sunday is still one Sunday"
+    },
+    {
+      "name": "dst_istanbul_2016_spring_forward_daily",
+      "habit": {
+        "startDate": "2016-03-01",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "daily"
+        }
+      },
+      "timezone": "Europe/Istanbul",
+      "from": "2016-03-25",
+      "to": "2016-03-29",
+      "expected": [
+        "2016-03-25",
+        "2016-03-26",
+        "2016-03-27",
+        "2016-03-28",
+        "2016-03-29"
+      ],
+      "note": "last Turkish spring-forward: 2016-03-27"
+    },
+    {
+      "name": "dst_istanbul_2016_cancelled_fall_back",
+      "habit": {
+        "startDate": "2016-10-27",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "everyNDays",
+          "interval": 2
+        }
+      },
+      "timezone": "Europe/Istanbul",
+      "from": "2016-10-26",
+      "to": "2016-11-03",
+      "expected": [
+        "2016-10-27",
+        "2016-10-29",
+        "2016-10-31",
+        "2016-11-02"
+      ],
+      "note": "Turkey stayed on UTC+3; 2016-10-30 had no change"
+    },
+    {
+      "name": "istanbul_2026_no_dst_weekend_days",
+      "habit": {
+        "startDate": "2026-03-01",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "weekdays",
+          "weekdays": [
+            7,
+            1
+          ]
+        }
+      },
+      "timezone": "Europe/Istanbul",
+      "from": "2026-03-27",
+      "to": "2026-04-06",
+      "expected": [
+        "2026-03-29",
+        "2026-03-30",
+        "2026-04-05",
+        "2026-04-06"
+      ],
+      "note": "no DST in Turkey since 2016"
+    },
+    {
+      "name": "dst_midnight_gap_santiago",
+      "habit": {
+        "startDate": "2026-09-01",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "daily"
+        }
+      },
+      "timezone": "America/Santiago",
+      "from": "2026-09-04",
+      "to": "2026-09-08",
+      "expected": [
+        "2026-09-04",
+        "2026-09-05",
+        "2026-09-06",
+        "2026-09-07",
+        "2026-09-08"
+      ],
+      "note": "DST starts at local midnight, so one day has no 00:00"
+    },
+    {
+      "name": "far_east_kiritimati_weekdays",
+      "habit": {
+        "startDate": "2026-03-02",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "weekdays",
+          "weekdays": [
+            1,
+            5
+          ]
+        }
+      },
+      "timezone": "Pacific/Kiritimati",
+      "from": "2026-03-01",
+      "to": "2026-03-14",
+      "expected": [
+        "2026-03-02",
+        "2026-03-06",
+        "2026-03-09",
+        "2026-03-13"
+      ],
+      "note": "UTC+14"
+    },
+    {
+      "name": "far_west_pago_pago_every_3",
+      "habit": {
+        "startDate": "2026-03-02",
+        "endDate": null,
+        "skippedDates": [],
+        "active": true,
+        "recurrence": {
+          "type": "everyNDays",
+          "interval": 3
+        }
+      },
+      "timezone": "Pacific/Pago_Pago",
+      "from": "2026-03-01",
+      "to": "2026-03-14",
+      "expected": [
+        "2026-03-02",
+        "2026-03-05",
+        "2026-03-08",
+        "2026-03-11",
+        "2026-03-14"
+      ],
+      "note": "UTC-11"
+    }
+  ]
+}

@@ -435,18 +435,35 @@ def _recalculate_and_store(db, user_id: str, tz_id: str = None) -> Dict:
 
 # ======================== READ-TIME DECAY ========================
 
-def get_streak_with_decay(db, user_id: str) -> Dict:
+def _valid_tz(tz_id) -> Optional[str]:
+    """Return tz_id if it is a known IANA timezone, else None."""
+    if not tz_id or not isinstance(tz_id, str):
+        return None
+    try:
+        pytz.timezone(tz_id.strip())
+        return tz_id.strip()
+    except Exception:
+        return None
+
+
+def get_streak_with_decay(db, user_id: str, tz_id: Optional[str] = None) -> Dict:
     """
     GET /streak — reads stored value with virtual (read-time) decay.
-    
+
     Returns streakAlive + streakAtRisk for UX clarity.
     Does NOT write to DB — zero write amplification on reads.
     The stored currentStreak is lazily corrected on the next write.
+
+    "Today" is the USER's today. Timezone precedence:
+      1. tz_id sent by the client now (their current timezone)
+      2. the timezone stored with their last completion
+      3. UTC — only for legacy profiles that have neither. Near midnight this
+         is wrong for anyone not in UTC, which is why clients should send tz.
     """
     profile = db.user_profiles.find_one({"userId": user_id}) or {}
     stored = profile.get("currentStreak", 0)
     last_str = profile.get("lastCompletedLocalDate")
-    tz_id = profile.get("lastTimezoneIdentifier", "UTC")
+    tz_id = _valid_tz(tz_id) or profile.get("lastTimezoneIdentifier") or "UTC"
     longest = profile.get("longestStreak", 0)
 
     base = {
