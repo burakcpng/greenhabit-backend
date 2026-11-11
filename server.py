@@ -71,6 +71,7 @@ class CreateTaskPayload(BaseModel):
     evidenceImagePath: Optional[str] = None  # ✅ FIX: Photo proof persistence
     creatorType: Optional[str] = "user"  # ✅ Creator Attribution: "system" or "user"
     sharedBy: Optional[str] = None  # ✅ Original creator userId (for profile-added tasks)
+    time: Optional[str] = None  # v1.5: optional "HH:mm" (floating wall-clock)
 
 
 class UpdateTaskPayload(BaseModel):
@@ -81,10 +82,49 @@ class UpdateTaskPayload(BaseModel):
     evidenceImagePath: Optional[str] = None  # ✅ FIX: Photo proof persistence
     completionLocalDate: Optional[str] = None  # ✅ Streak v2: "YYYY-MM-DD" in user's local TZ
     timezoneIdentifier: Optional[str] = None   # ✅ Streak v2: IANA TZ (e.g. "Europe/Istanbul")
+    # v1.5 reschedule: only applied to uncompleted tasks. A value equal to the
+    # stored one is a no-op, so clients that echo the current date are safe.
+    date: Optional[str] = None                 # "YYYY-MM-DD"
+    time: Optional[str] = None                 # "HH:mm"; explicit null clears the time
 
 # ✅ Streak v2: Batch offline completion sync payload
 class CompletionSyncPayload(BaseModel):
     completions: List[dict]  # [{taskId, completionLocalDate, timezoneIdentifier, completedAt}]
+
+
+# ======================== v1.5 HABIT MODELS ========================
+
+class HabitRecurrencePayload(BaseModel):
+    type: str                                  # "daily" | "weekdays" | "everyNDays"
+    weekdays: Optional[List[int]] = None       # ISO-8601: 1 = Monday ... 7 = Sunday
+    interval: Optional[int] = None             # everyNDays, anchored on startDate
+
+
+class CreateHabitPayload(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    details: str = Field("", max_length=1000)
+    category: str
+    co2Kg: float = Field(..., ge=0.0, le=10.0)
+    time: Optional[str] = None                 # "HH:mm" or null = all-day
+    recurrence: HabitRecurrencePayload
+    reminderOffsets: List[int] = Field(default_factory=list)  # minutes before `time`, max 2
+    startDate: Optional[str] = None            # default: today in the user's timezone
+    endDate: Optional[str] = None              # inclusive
+
+
+class UpdateHabitPayload(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=200)
+    details: Optional[str] = Field(None, max_length=1000)
+    category: Optional[str] = None
+    co2Kg: Optional[float] = Field(None, ge=0.0, le=10.0)
+    time: Optional[str] = None                 # explicit null = make all-day
+    recurrence: Optional[HabitRecurrencePayload] = None
+    reminderOffsets: Optional[List[int]] = None
+    endDate: Optional[str] = None              # explicit null = no end date
+
+
+class SkipHabitPayload(BaseModel):
+    date: str                                  # "YYYY-MM-DD"
 
 # ======================== ROOT ENDPOINTS ========================
 
@@ -455,13 +495,29 @@ def get_tasks(
     category: Optional[str] = Query(None),
     completed: Optional[bool] = Query(None),
     limit: int = Query(100, ge=1, le=500),
+    tz: Optional[str] = Query(None),  # v1.5: IANA timezone; enables habit materialization
     user_id: str = Depends(get_current_user) # ✅ Secure Dependency
 ):
     try:
         db = get_db()
         # user_id is now provided by Depends
 
-        
+        # v1.5 habits: only when the client sends a valid tz AND a date.
+        #   date <= today (user TZ) → materialize due habits as real task rows
+        #   date  > today           → virtual occurrences appended below (no DB write)
+        # Without tz (old clients) nothing here runs and behaviour is unchanged.
+        virtual_tasks = []
+        if date and tz:
+            try:
+                from habit_system import resolve_tz, sync_day
+                valid_tz = resolve_tz(tz)
+                if valid_tz:
+                    virtual_tasks = sync_day(db, user_id, date, valid_tz)
+            except Exception as habit_err:
+                # Never let the habit layer break the task list
+                print(f"⚠️ Habit sync failed (non-blocking): {habit_err}")
+                virtual_tasks = []
+
         query = {"userId": user_id}
         if date:
             query["date"] = date
@@ -503,7 +559,13 @@ def get_tasks(
                 task["creatorType"] = "user"
                 task["creatorId"] = None
                 task["creatorName"] = None
-        
+
+        # v1.5: future-date virtual habit occurrences (never completed, never stored)
+        if virtual_tasks and completed is not True:
+            if category:
+                virtual_tasks = [v for v in virtual_tasks if v.get("category") == category]
+            tasks.extend(virtual_tasks)
+
         return sanitize_docs(tasks)
     except HTTPException:
         raise
@@ -518,6 +580,7 @@ _ALLOWED_TASK_CATEGORIES = {
 @api.post("/tasks", status_code=201)
 def create_task(
     payload: CreateTaskPayload,
+    tz: Optional[str] = Query(None),  # v1.5: IANA timezone for the default date
     user_id: str = Depends(get_current_user)
 ):
     try:
@@ -541,7 +604,23 @@ def create_task(
                        f"Allowed: {sorted(_ALLOWED_TASK_CATEGORIES)}"
             )
 
-        task_date = payload.date or date.today().isoformat()
+        # v1.5: optional time of day
+        if payload.time is not None:
+            from habit_system import validate_time, HabitError
+            try:
+                validate_time(payload.time)
+            except HabitError as e:
+                raise HTTPException(status_code=e.status_code, detail=e.detail)
+
+        # v1.5 TZ fix: when the client omits the date, "today" is the USER's
+        # today (same rule as streak_system.user_today), not the server's.
+        # Without a valid tz the legacy server-date fallback is kept.
+        task_date = payload.date
+        if not task_date:
+            from habit_system import resolve_tz
+            from streak_system import user_today
+            valid_tz = resolve_tz(tz)
+            task_date = (user_today(valid_tz) if valid_tz else date.today()).isoformat()
         # user_id provided by Depends
 
         task_id = str(uuid.uuid4())
@@ -568,7 +647,9 @@ def create_task(
             "createdAt": datetime.utcnow(),
             "updatedAt": datetime.utcnow()
         }
-        
+        if payload.time is not None:
+            task_dict["time"] = payload.time  # v1.5 (key absent for untimed tasks)
+
         db = get_db()
         result = db.tasks.insert_one(task_dict)
         
@@ -582,6 +663,45 @@ def create_task(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create task: {str(e)}")
 
+def _reschedule_virtual_task(db, user_id: str, habit_id: str, occurrence_date: str, raw_update: dict):
+    """
+    v1.5: PATCH on a virtual (future, not yet materialized) habit occurrence.
+    Only a reschedule is possible: it creates a detached one-off task on the
+    new date/time and adds the original date to the habit's skippedDates.
+    """
+    from habit_system import reschedule_virtual_occurrence, HabitError
+
+    if raw_update.get("isCompleted") is not None:
+        raise HTTPException(status_code=400, detail="Future habit occurrences can't be completed yet")
+
+    time_sent = "time" in raw_update
+    if raw_update.get("date") is None and not time_sent:
+        raise HTTPException(
+            status_code=400,
+            detail="Future habit occurrences can only be rescheduled or skipped"
+        )
+
+    # Creates a real task, so it shares the task-creation budget (20/hour)
+    check_rate_limit(user_id, "task_create")
+
+    try:
+        new_task = reschedule_virtual_occurrence(
+            db, user_id, habit_id, occurrence_date,
+            raw_update.get("date"), time_sent, raw_update.get("time")
+        )
+    except HabitError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
+
+    return {
+        "success": True,
+        "message": "Occurrence rescheduled",
+        "modified": True,
+        "detached": True,
+        "taskId": new_task["id"],
+        "originHabitId": habit_id
+    }
+
+
 @api.patch("/tasks/{task_id}")
 def update_task(
     task_id: str,
@@ -591,21 +711,69 @@ def update_task(
     try:
         db = get_db()
         # user_id is now provided by Depends
-        
+        raw_update = payload.dict(exclude_unset=True)
+
         task = db.tasks.find_one({"id": task_id, "userId": user_id})
-        
+
         if not task:
             try:
                 object_id = ObjectId(task_id)
                 task = db.tasks.find_one({"_id": object_id, "userId": user_id})
             except:
                 pass
-        
+
+        # v1.5: "habit_{habitId}_{YYYY-MM-DD}" addresses a virtual occurrence
+        if not task:
+            from habit_system import parse_virtual_id
+            virtual_ref = parse_virtual_id(task_id)
+            if virtual_ref:
+                habit_id, occurrence_date = virtual_ref
+                task = db.tasks.find_one(
+                    {"userId": user_id, "habitId": habit_id, "date": occurrence_date}
+                )
+                if task:
+                    # Materialized in the meantime: treat as the real task
+                    task_id = task["id"]
+                else:
+                    return _reschedule_virtual_task(db, user_id, habit_id, occurrence_date, raw_update)
+
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
-        
-        update_data = {k: v for k, v in payload.dict(exclude_unset=True).items() if v is not None}
-        
+
+        update_data = {k: v for k, v in raw_update.items() if v is not None}
+
+        # v1.5 reschedule: date/time may change on UNCOMPLETED tasks only.
+        # A value equal to the stored one is ignored (old clients may echo it).
+        detach_habit_id = None
+        new_date = update_data.pop("date", None)
+        update_data.pop("time", None)
+        time_sent = "time" in raw_update
+        new_time = raw_update.get("time")
+        date_changed = new_date is not None and new_date != task.get("date")
+        time_changed = time_sent and new_time != task.get("time")
+
+        if date_changed or time_changed:
+            if task.get("isCompleted", False):
+                raise HTTPException(status_code=400, detail="Completed tasks cannot be rescheduled")
+
+            from habit_system import parse_date, validate_time, HabitError
+            try:
+                if date_changed:
+                    parse_date(new_date)
+                    update_data["date"] = new_date
+                if time_changed:
+                    validate_time(new_time)
+                    update_data["time"] = new_time  # None clears the time
+            except HabitError as e:
+                raise HTTPException(status_code=e.status_code, detail=e.detail)
+
+            # A rescheduled habit instance is DETACHED: it becomes a one-off
+            # (habitId removed, originHabitId kept) and the original date is
+            # skipped so the habit does not re-materialize it.
+            if isinstance(task.get("habitId"), str):
+                detach_habit_id = task["habitId"]
+                update_data["originHabitId"] = detach_habit_id
+
         if not update_data:
             raise HTTPException(status_code=400, detail="No fields to update")
         
@@ -628,7 +796,17 @@ def update_task(
                 update_data["completedAt"] = None
         
         update_data["updatedAt"] = datetime.utcnow()
-        
+
+        # v1.5: single update document for every write below. `update_data` is
+        # referenced, not copied, so fields added later (completedAt) are included.
+        update_ops = {"$set": update_data}
+        if detach_habit_id:
+            update_ops["$unset"] = {"habitId": ""}
+            # Skip the original date BEFORE detaching: if the write below fails,
+            # the instance row is still there and nothing is duplicated.
+            from habit_system import add_skipped_dates
+            add_skipped_dates(db, user_id, detach_habit_id, [task.get("date")])
+
         # Check if task is being completed (not already completed AND not previously reversed)
         is_completing_task = (
             is_toggling_completion
@@ -645,12 +823,12 @@ def update_task(
             if "id" in task:
                 result = db.tasks.update_one(
                     {"id": task_id, "userId": user_id, "isCompleted": False},
-                    {"$set": update_data}
+                    update_ops
                 )
             else:
                 result = db.tasks.update_one(
                     {"_id": task["_id"], "userId": user_id, "isCompleted": False},
-                    {"$set": update_data}
+                    update_ops
                 )
             
             # If no document matched, task was already completed
@@ -666,12 +844,12 @@ def update_task(
             if "id" in task:
                 result = db.tasks.update_one(
                     {"id": task_id, "userId": user_id},
-                    {"$set": update_data}
+                    update_ops
                 )
             else:
                 result = db.tasks.update_one(
                     {"_id": task["_id"], "userId": user_id},
-                    {"$set": update_data}
+                    update_ops
                 )
             # ✅ ULTRATHINK FIX: Atomic score re-calculation when a task is un-completed
             if is_toggling_completion and update_data.get("isCompleted") is False:
@@ -684,7 +862,10 @@ def update_task(
             "message": "Task updated successfully",
             "modified": result.modified_count > 0
         }
-        
+        if detach_habit_id:
+            response["detached"] = True
+            response["originHabitId"] = detach_habit_id
+
         # If completing task, calculate rewards and check achievements
         if is_completing_task and result.modified_count > 0:
             from streak_system import record_completion, InvalidCompletionError, safe_streak_fallback
@@ -785,7 +966,11 @@ def bulk_delete_tasks_endpoint(
             raise HTTPException(status_code=400, detail="No task IDs provided")
         
         from social_system import bulk_delete_tasks
-        
+
+        # v1.5: deleted habit instances must not be re-materialized on the next fetch
+        from habit_system import register_deleted_instances
+        register_deleted_instances(db, user_id, payload.taskIds)
+
         result = bulk_delete_tasks(db, user_id, payload.taskIds)
         
         # ✅ ULTRATHINK FIX: Atomic score re-calculation when tasks are bulk deleted
@@ -810,7 +995,11 @@ def delete_task(
         db = get_db()
         # user_id is now provided by Depends
 
-        
+        # v1.5: deleting a habit instance skips that date for the habit, so the
+        # occurrence is not re-materialized on the next fetch.
+        from habit_system import register_deleted_instances
+        register_deleted_instances(db, user_id, [task_id])
+
         result = db.tasks.delete_one({"id": task_id, "userId": user_id})
         
         if result.deleted_count == 0:
@@ -835,6 +1024,165 @@ def delete_task(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete task: {str(e)}")
+
+# ======================== v1.5 HABIT ROUTES ========================
+# A habit is a recurring definition. Its occurrences reach clients through
+# GET /tasks: real task rows for dates <= today, virtual items for future dates.
+# All endpoints take an optional `tz` (IANA) query param for "today".
+
+def _validate_habit_content(title: Optional[str], details: Optional[str], category: Optional[str]):
+    """Same content rules as POST /tasks: profanity filter + category whitelist."""
+    try:
+        if title:
+            ProfanityFilter.validate_content(title, "Habit Title")
+        if details:
+            ProfanityFilter.validate_content(details, "Habit Details")
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    if category is not None and category not in _ALLOWED_TASK_CATEGORIES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid category '{category}'. "
+                   f"Allowed: {sorted(_ALLOWED_TASK_CATEGORIES)}"
+        )
+
+
+@api.get("/habits")
+def get_habits(user_id: str = Depends(get_current_user)):
+    """List the user's active habits (newest first)."""
+    try:
+        db = get_db()
+        from habit_system import list_habits
+        return sanitize_docs(list_habits(db, user_id))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch habits: {str(e)}")
+
+
+@api.post("/habits", status_code=201)
+def create_habit_endpoint(
+    payload: CreateHabitPayload,
+    tz: Optional[str] = Query(None),
+    user_id: str = Depends(get_current_user)
+):
+    """Create a recurring habit. Max 30 active habits per user."""
+    try:
+        from habit_system import create_habit, HabitError
+
+        check_rate_limit(user_id, "habit_create")
+        _validate_habit_content(payload.title, payload.details, payload.category)
+
+        db = get_db()
+        try:
+            habit = create_habit(db, user_id, payload.dict(), tz)
+        except HabitError as e:
+            raise HTTPException(status_code=e.status_code, detail=e.detail)
+
+        return {
+            "success": True,
+            "habitId": habit["id"],
+            "message": "Habit created successfully",
+            "habit": sanitize_doc(habit)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create habit: {str(e)}")
+
+
+@api.patch("/habits/{habit_id}")
+def update_habit_endpoint(
+    habit_id: str,
+    payload: UpdateHabitPayload,
+    tz: Optional[str] = Query(None),
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Edit a habit ("this and future"). Completed history is untouched; today's
+    uncompleted instance is removed so it re-materializes from the new definition.
+    A recurrence change resets startDate to the user's today.
+    """
+    try:
+        from habit_system import update_habit, HabitError
+
+        changes = payload.dict(exclude_unset=True)
+        _validate_habit_content(changes.get("title"), changes.get("details"), changes.get("category"))
+
+        db = get_db()
+        try:
+            habit, removed = update_habit(db, user_id, habit_id, changes, tz)
+        except HabitError as e:
+            raise HTTPException(status_code=e.status_code, detail=e.detail)
+
+        return {
+            "success": True,
+            "message": "Habit updated successfully",
+            "habit": sanitize_doc(habit),
+            "removedInstances": removed
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update habit: {str(e)}")
+
+
+@api.delete("/habits/{habit_id}")
+def delete_habit_endpoint(
+    habit_id: str,
+    tz: Optional[str] = Query(None),
+    user_id: str = Depends(get_current_user)
+):
+    """Soft-delete a habit (active=false). Completed history stays."""
+    try:
+        from habit_system import soft_delete_habit, HabitError
+
+        db = get_db()
+        try:
+            removed = soft_delete_habit(db, user_id, habit_id, tz)
+        except HabitError as e:
+            raise HTTPException(status_code=e.status_code, detail=e.detail)
+
+        return {
+            "success": True,
+            "message": "Habit deleted successfully",
+            "removedInstances": removed
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete habit: {str(e)}")
+
+
+@api.post("/habits/{habit_id}/skip")
+def skip_habit_occurrence_endpoint(
+    habit_id: str,
+    payload: SkipHabitPayload,
+    user_id: str = Depends(get_current_user)
+):
+    """Skip a single occurrence: that date is never materialized for this habit."""
+    try:
+        from habit_system import skip_occurrence, HabitError
+
+        db = get_db()
+        try:
+            habit, removed_instance = skip_occurrence(db, user_id, habit_id, payload.date)
+        except HabitError as e:
+            raise HTTPException(status_code=e.status_code, detail=e.detail)
+
+        return {
+            "success": True,
+            "message": "Occurrence skipped",
+            "habitId": habit_id,
+            "date": payload.date,
+            "removedInstance": removed_instance,
+            "skippedDates": habit.get("skippedDates", [])
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to skip occurrence: {str(e)}")
 
 # ======================== STATS ROUTES ========================
 
@@ -1043,9 +1391,14 @@ async def get_learning(category: Optional[str] = Query(None)):
 # ======================== AI ROUTES ========================
 
 @api.post("/ai/generate-tasks")
-async def generate_ai_tasks():
+async def generate_ai_tasks(tz: Optional[str] = Query(None)):
     """Generate random eco-friendly tasks from different categories"""
-    today = date.today().isoformat()
+    # v1.5 TZ fix: with a valid tz the suggested date is the user's today;
+    # without it the legacy server date is kept.
+    from habit_system import resolve_tz
+    from streak_system import user_today
+    valid_tz = resolve_tz(tz)
+    today = (user_today(valid_tz) if valid_tz else date.today()).isoformat()
     
     # Generate 3-4 random tasks from ALL categories
     all_categories = list(TASK_POOL.keys())  # Dynamic: ["Transport", "Energy", "Food", "Waste", "Water", "Digital", "Social"]
@@ -1101,7 +1454,15 @@ def startup_event():
         # ✅ Block system: Create block indexes
         from block_system import ensure_block_indexes
         ensure_block_indexes(db)
-        
+
+        # v1.5 Habits: indexes incl. the partial unique (userId, habitId, date).
+        # Isolated so a failure here cannot skip the remaining startup steps.
+        try:
+            from habit_system import ensure_habit_indexes
+            ensure_habit_indexes(db)
+        except Exception as habit_idx_err:
+            print(f"❌ Habit index creation failed: {habit_idx_err}")
+
         # ✅ APNs: Validate push notification configuration
         from notification_system import validate_apns_config
         validate_apns_config()
@@ -1293,7 +1654,10 @@ def _perform_full_deletion(user_id: str):
         # ── Phase 1: Primary Data ──────────────────────────────
         tasks_result = db.tasks.delete_many({"userId": user_id})
         print(f"   1. Deleted {tasks_result.deleted_count} tasks")
-        
+
+        habits_result = db.habits.delete_many({"userId": user_id})
+        print(f"   1b. Deleted {habits_result.deleted_count} habits")
+
         prefs_result = db.preferences.delete_many({"userId": user_id})
         print(f"   2. Deleted {prefs_result.deleted_count} preferences")
         
@@ -2744,6 +3108,7 @@ def search_users_endpoint(
 def get_calendar_endpoint(
     year: int,
     month: int,
+    tz: Optional[str] = Query(None),  # v1.5: IANA timezone; enables habit counts
     user_id: str = Depends(get_current_user)
 ):
     """Get daily task completion data for a specific month"""
@@ -2758,6 +3123,21 @@ def get_calendar_endpoint(
         from social_system import get_calendar_data
         
         calendar_data = get_calendar_data(db, user_id, year, month)
+
+        # v1.5: add habit occurrences that have no task row yet (future days and
+        # past days never opened). Read-only — the calendar never materializes.
+        # Only for clients that send a valid tz, so old clients see no change.
+        if tz:
+            try:
+                from habit_system import resolve_tz, calendar_virtual_counts, merge_calendar_counts
+                if resolve_tz(tz):
+                    calendar_data = merge_calendar_counts(
+                        calendar_data,
+                        calendar_virtual_counts(db, user_id, year, month)
+                    )
+            except Exception as habit_err:
+                print(f"⚠️ Habit calendar counts failed (non-blocking): {habit_err}")
+
         return calendar_data
     except HTTPException:
         raise

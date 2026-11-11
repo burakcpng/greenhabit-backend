@@ -24,7 +24,7 @@ pytz>=2024.1
 
 # ======================== DEVELOPMENT (Optional) ========================
 # Uncomment these only if you're actively developing:
-# pytest>=8.0.0
+# Test dependencies live in requirements-dev.txt
 httpx[http2]>=0.27.0
 pyjwt>=2.8.0
 cryptography>=42.0.0

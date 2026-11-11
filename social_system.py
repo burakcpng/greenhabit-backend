@@ -48,6 +48,7 @@ def get_user_manual_tasks(db, user_id: str, viewer_id: Optional[str] = None, lim
             "userId": user_id,
             "creatorType": {"$ne": "system"},
             "sharedBy": {"$in": [None]},  # ✅ Only show user's OWN created tasks, not adopted ones
+            "habitId": {"$in": [None]},   # v1.5: hide per-day habit instances (one row per day)
         },
         {
             "_id": 1, "id": 1, "title": 1, "details": 1, "category": 1,
@@ -119,6 +120,7 @@ def get_created_tasks(
     query = {
         "userId": user_id,
         "creatorType": {"$ne": "system"},
+        "habitId": {"$in": [None]},  # v1.5: hide per-day habit instances (one row per day)
     }
 
     # Parse cursor for keyset pagination
@@ -542,6 +544,7 @@ def get_task_leaderboard(
     match_filter = {
         "creatorType": {"$ne": "system"},
         "sharedBy": {"$in": [None]},
+        "habitId": {"$in": [None]},  # v1.5: habit instances are not leaderboard entries
         "likeCount": {"$gte": 1},
     }
     if all_excluded:

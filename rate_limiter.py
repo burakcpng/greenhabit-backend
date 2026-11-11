@@ -19,6 +19,7 @@ RATE_LIMITS = {
     "auth_register": {"requests": 5,  "window_seconds": 60},       # 5 register attempts/min per IP
     "task_complete": {"requests": 30, "window_seconds": 60},      # 30 completions/min
     "task_create": {"requests": 20, "window_seconds": 3600},      # 20 tasks/hour
+    "habit_create": {"requests": 20, "window_seconds": 3600},     # 20 habits/hour (v1.5)
     "task_toggle": {"requests": 10, "window_seconds": 60},        # 10 toggles/min per task
     "follow": {"requests": 30, "window_seconds": 3600},           # 30 follows/hour
     "unfollow": {"requests": 30, "window_seconds": 3600},         # 30 unfollows/hour
