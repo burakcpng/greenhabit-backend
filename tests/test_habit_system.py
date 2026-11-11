@@ -1495,9 +1495,23 @@ class TestSideEffects:
         legacy = client.post("/api/ai/generate-tasks").json()
         assert {t["date"] for t in legacy["tasks"]} == {date.today().isoformat()}
 
+    def test_habit_create_limit_lets_a_new_user_reach_the_cap(self):
+        from rate_limiter import RATE_LIMITS
+        assert RATE_LIMITS["habit_create"] == {"requests": 50, "window_seconds": 3600}
+        assert RATE_LIMITS["habit_create"]["requests"] > MAX_ACTIVE_HABITS
+
+    def test_thirty_habits_in_one_sitting(self, client):
+        for n in range(MAX_ACTIVE_HABITS):
+            assert client.post("/api/habits?tz=UTC", json=habit_body(title=f"Habit {n}")).status_code == 201
+        response = client.post("/api/habits?tz=UTC", json=habit_body(title="One too many"))
+        assert response.status_code == 400, "the cap answers, not the rate limit"
+
     def test_habit_create_is_rate_limited(self, client):
         from rate_limiter import RATE_LIMITS
         limit = RATE_LIMITS["habit_create"]["requests"]
         for n in range(limit):
-            assert client.post("/api/habits?tz=UTC", json=habit_body(title=f"Habit {n}")).status_code == 201
+            response = client.post("/api/habits?tz=UTC", json=habit_body(title=f"Habit {n}"))
+            assert response.status_code == 201, response.text
+            # Delete right away so the 30-habit cap never answers first.
+            assert client.delete(f"/api/habits/{response.json()['habit']['id']}?tz=UTC").status_code == 200
         assert client.post("/api/habits?tz=UTC", json=habit_body(title="Too fast")).status_code == 429
